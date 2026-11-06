@@ -5,12 +5,19 @@ import {
   type BoatMachineType,
   type BoatRestClient,
 } from "./boat-rest-client";
+import {
+  createBoxdClient,
+  isBoxdMachineSize,
+  type BoxdClient,
+  type BoxdMachineSize,
+} from "./boxd-client";
 import { createModalClient } from "./client";
 import { createDaytonaRestClient, type DaytonaRestClient } from "./daytona-rest-client";
 import { createE2BRestClient } from "./e2b-rest-client";
 import { resolveSandboxBackendName, type SandboxBackendName } from "./provider-name";
 import type { SandboxProvider } from "./provider";
 import { createBoatProvider, type BoatSandboxProvider } from "./providers/boat-provider";
+import { createBoxdProvider, type BoxdSandboxProvider } from "./providers/boxd-provider";
 import { createDaytonaProvider, type DaytonaSandboxProvider } from "./providers/daytona-provider";
 import {
   createE2BProvider,
@@ -183,7 +190,67 @@ function createBoatProviderFromEnv(env: Env): BoatSandboxProvider {
   });
 }
 
+/** The boxd client for this deployment's key, region and org. */
+export function createBoxdClientFromEnv(env: Env): BoxdClient {
+  if (!env.BOXD_API_KEY) {
+    throw new Error("BOXD_API_KEY is required when SANDBOX_PROVIDER=boxd");
+  }
+  return createBoxdClient({
+    apiKey: env.BOXD_API_KEY,
+    region: env.BOXD_REGION?.trim() || undefined,
+    org: env.BOXD_ORG?.trim() || undefined,
+    baseUrl: env.BOXD_API_URL?.trim() || undefined,
+  });
+}
+
+/** Default boxd machine size, used when a session requests no CPU or memory. */
+export const DEFAULT_BOXD_SANDBOX_SIZE: BoxdMachineSize = "2x8";
+
+/** Machine size for a sandbox whose scope requests no CPU or memory. */
+export function resolveBoxdDefaultMachineSize(env: Env): BoxdMachineSize {
+  const size = env.BOXD_SANDBOX_SIZE?.trim() || DEFAULT_BOXD_SANDBOX_SIZE;
+  if (!isBoxdMachineSize(size)) {
+    throw new Error("BOXD_SANDBOX_SIZE must be one of 1x4, 2x8, 4x16, 8x32");
+  }
+  return size;
+}
+
+/**
+ * Extra labels for every boxd machine, from `BOXD_LABELS` as comma-separated
+ * `key=value` pairs. boxd validates keys and values on create; this only
+ * refuses what is not a pair at all.
+ */
+export function parseBoxdLabels(value: string | undefined): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const entry of (value ?? "").split(",")) {
+    const pair = entry.trim();
+    if (!pair) continue;
+    const separator = pair.indexOf("=");
+    if (separator <= 0) {
+      throw new Error("BOXD_LABELS must be comma-separated key=value pairs");
+    }
+    labels[pair.slice(0, separator).trim()] = pair.slice(separator + 1).trim();
+  }
+  return labels;
+}
+
+function createBoxdProviderFromEnv(env: Env): BoxdSandboxProvider {
+  if (!env.BOXD_API_KEY || !env.BOXD_BASE_SNAPSHOT) {
+    throw new Error("BOXD_API_KEY and BOXD_BASE_SNAPSHOT are required when SANDBOX_PROVIDER=boxd");
+  }
+
+  return createBoxdProvider(createBoxdClientFromEnv(env), {
+    scmProvider: resolveScmProviderFromEnv(env.SCM_PROVIDER),
+    sandboxAccessPasswordSecret: env.BOXD_API_KEY,
+    baseSnapshot: env.BOXD_BASE_SNAPSHOT,
+    defaultSize: resolveBoxdDefaultMachineSize(env),
+    deploymentName: env.DEPLOYMENT_NAME,
+    extraLabels: parseBoxdLabels(env.BOXD_LABELS),
+  });
+}
+
 export function createSandboxProviderFromEnv(env: Env, backend: "boat"): BoatSandboxProvider;
+export function createSandboxProviderFromEnv(env: Env, backend: "boxd"): BoxdSandboxProvider;
 export function createSandboxProviderFromEnv(env: Env, backend: "daytona"): DaytonaSandboxProvider;
 export function createSandboxProviderFromEnv(env: Env, backend: "e2b"): E2BSandboxProvider;
 export function createSandboxProviderFromEnv(
@@ -202,6 +269,8 @@ export function createSandboxProviderFromEnv(
   switch (backend) {
     case "boat":
       return createBoatProviderFromEnv(env);
+    case "boxd":
+      return createBoxdProviderFromEnv(env);
     case "daytona":
       return createDaytonaProviderFromEnv(env);
     case "vercel":

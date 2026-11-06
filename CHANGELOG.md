@@ -2,6 +2,15 @@
 
 New features, integrations, and notable improvements to Open-Inspect — newest first.
 
+## November 6, 2026
+
+**boxd as a sandbox provider.** Set `sandbox_provider = "boxd"` to run sessions in isolated
+[boxd](https://boxd.sh?ref=background-agents) Ubuntu VMs, restored from a memory-and-disk snapshot
+the new `boxd-infra` build saves. Idle sessions hibernate and the next prompt wakes the same machine
+with its files and processes intact. CPU and memory settings pick the smallest boxd size that fits;
+prebuilt images and the session timeout setting are not available on boxd yet. See
+[boxd Sandbox Provider](docs/BOXD_SANDBOX_PROVIDER.md).
+
 ## October 31, 2026
 
 **Kimi Coding Plan models.** Kimi K3.1 Pro, K3, Kimi for Coding, and their Highspeed and 256K

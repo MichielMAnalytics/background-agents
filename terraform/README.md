@@ -14,6 +14,7 @@ The infrastructure spans multiple cloud providers:
 | **Modal**      | Optional sandbox infrastructure                      | CLI wrapper (no provider exists)    |
 | **Daytona**    | Optional sandbox snapshots                           | REST API wrapper                    |
 | **Boat**       | Optional sandbox snapshots                           | REST API wrapper                    |
+| **boxd**       | Optional sandbox snapshots                           | Python SDK wrapper                  |
 
 ## Directory Structure
 
@@ -258,6 +259,13 @@ BOAT_BASE_SNAPSHOT # Prefix for the Terraform-managed saved snapshot
 BOAT_API_URL       # Optional; defaults to https://boat.dev/api/v1
 BOAT_ORG           # Optional organization wallet
 BOAT_SANDBOX_TYPE  # Optional; defaults to default
+
+# boxd (only if SANDBOX_PROVIDER=boxd)
+BOXD_API_KEY
+BOXD_BASE_SNAPSHOT # Prefix for the Terraform-managed snapshot
+BOXD_REGION        # Optional; defaults to the key's home region
+BOXD_ORG           # Optional org machines are billed to
+BOXD_SANDBOX_SIZE  # Optional; defaults to 2x8
 VERCEL_SANDBOX_API_BASE_URL # Optional advanced Vercel Sandbox API base URL override
 
 # Optional GitHub sign-in pair (set both or neither)
@@ -459,7 +467,7 @@ curl https://open-inspect-control-plane-prod.<subdomain>.workers.dev/health
 # Manual form: https://<workspace>[-<modal_environment_web_suffix>]--open-inspect-api-health.modal.run
 MODAL_WORKSPACE_SLUG="<workspace>" # or "<workspace>-<modal_environment_web_suffix>"
 curl https://${MODAL_WORKSPACE_SLUG}--open-inspect-api-health.modal.run
-# Daytona, Vercel, E2B and Boat use their provider APIs directly, so there is no Open-Inspect shim health URL.
+# Daytona, Vercel, E2B, Boat and boxd use their provider APIs directly, so there is no Open-Inspect shim health URL.
 
 # 3. Verify the web deployment
 curl -I "$(terraform output -raw web_app_url)"

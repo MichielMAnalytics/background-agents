@@ -735,6 +735,67 @@ variable "boat_sandbox_type" {
   }
 }
 
+# -----------------------------------------------------------------------------
+# boxd (only required when sandbox_provider = "boxd")
+# -----------------------------------------------------------------------------
+
+variable "boxd_api_key" {
+  description = "boxd API key — runtime (control-plane → boxd API + sandbox access password HMAC) and snapshot build"
+  type        = string
+  sensitive   = true
+  default     = ""
+
+  validation {
+    condition     = var.sandbox_provider != "boxd" || length(var.boxd_api_key) > 0
+    error_message = "boxd_api_key must be set when sandbox_provider = 'boxd'."
+  }
+}
+
+variable "boxd_base_snapshot" {
+  description = "Prefix of the boxd base snapshots built by Terraform; each build saves <prefix>-<16 hex>. Use a unique prefix per deployment sharing a boxd org."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.sandbox_provider != "boxd" || can(regex("^[a-z0-9][a-z0-9-]{0,45}$", var.boxd_base_snapshot))
+    error_message = "boxd_base_snapshot must be 1-46 lowercase letters, digits or dashes, starting with a letter or digit, when sandbox_provider = 'boxd'."
+  }
+}
+
+variable "boxd_region" {
+  description = "Optional boxd region machines and the snapshot live in (e.g. 'fra', 'nyc'); empty uses the API key's home region"
+  type        = string
+  default     = ""
+}
+
+variable "boxd_org" {
+  description = "Optional boxd org machines and the snapshot are created in and billed to; empty uses the API key's own org"
+  type        = string
+  default     = ""
+}
+
+variable "boxd_machine_labels" {
+  description = "Optional labels added to every boxd session machine (for cost attribution or cleanup), as key = value"
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for key, value in var.boxd_machine_labels : !strcontains(key, ",") && !strcontains(key, "=") && !strcontains(value, ",")])
+    error_message = "boxd_machine_labels keys must not contain ',' or '=', and values must not contain ','."
+  }
+}
+
+variable "boxd_sandbox_size" {
+  description = "boxd machine size for sessions that request no CPU or memory: '1x4', '2x8', '4x16', or '8x32'. A request picks the smallest size that fits it."
+  type        = string
+  default     = "2x8"
+
+  validation {
+    condition     = var.sandbox_provider != "boxd" || contains(["1x4", "2x8", "4x16", "8x32"], var.boxd_sandbox_size)
+    error_message = "boxd_sandbox_size must be '1x4', '2x8', '4x16', or '8x32' when sandbox_provider = 'boxd'."
+  }
+}
+
 variable "nextauth_secret" {
   description = "Browser authentication secret used by the control plane (legacy Terraform input name; generate with: openssl rand -base64 32)"
   type        = string
@@ -751,13 +812,13 @@ variable "nextauth_secret" {
 # =============================================================================
 
 variable "sandbox_provider" {
-  description = "Sandbox backend for session execution: 'modal', 'modal-vm', 'daytona', 'vercel', 'e2b', or 'boat'"
+  description = "Sandbox backend for session execution: 'modal', 'modal-vm', 'daytona', 'vercel', 'e2b', 'boat', or 'boxd'"
   type        = string
   default     = "modal"
 
   validation {
-    condition     = contains(["modal", "modal-vm", "daytona", "vercel", "e2b", "boat"], var.sandbox_provider)
-    error_message = "sandbox_provider must be 'modal', 'modal-vm', 'daytona', 'vercel', 'e2b', or 'boat'."
+    condition     = contains(["modal", "modal-vm", "daytona", "vercel", "e2b", "boat", "boxd"], var.sandbox_provider)
+    error_message = "sandbox_provider must be 'modal', 'modal-vm', 'daytona', 'vercel', 'e2b', 'boat', or 'boxd'."
   }
 }
 

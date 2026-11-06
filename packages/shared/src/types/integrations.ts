@@ -324,6 +324,7 @@ export const SANDBOX_PROVIDER_NAMES = [
   "vercel",
   "e2b",
   "boat",
+  "boxd",
 ] as const;
 
 export type SandboxProviderName = (typeof SANDBOX_PROVIDER_NAMES)[number];
@@ -341,6 +342,9 @@ const SANDBOX_SETTING_CAPABILITIES = {
   e2b: { resources: false, resourceLimits: false, timeout: true },
   // Resource requests select the smallest Boat machine type that fits them.
   boat: { resources: true, resourceLimits: false, timeout: true },
+  // Resource requests select the smallest boxd machine size that fits them;
+  // boxd has no absolute machine deadline for a session lifetime to map onto.
+  boxd: { resources: true, resourceLimits: false, timeout: false },
 } satisfies Record<
   SandboxProviderName,
   { resources: boolean; resourceLimits: boolean; timeout: boolean }

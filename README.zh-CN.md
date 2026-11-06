@@ -123,6 +123,7 @@ App 安装范围限定了工作区能够访问的仓库。沙箱 git 凭据仅�
 | [daytona-infra](packages/daytona-infra)     | Daytona 快照基础设施                 |
 | [e2b-infra](packages/e2b-infra)             | E2B 沙箱模板基础设施                 |
 | [boat-infra](packages/boat-infra)           | Boat 沙箱快照基础设施                |
+| [boxd-infra](packages/boxd-infra)           | boxd 沙箱快照基础设施                |
 | [slack-bot](packages/slack-bot)             | Slack 集成（从消息创建会话）         |
 | [github-bot](packages/github-bot)           | GitHub 集成（自动审查、@提及）       |
 | [linear-bot](packages/linear-bot)           | Linear 集成（议题 → 编程会话）       |
@@ -299,6 +300,7 @@ MIT
 - [Vercel Sandbox](https://vercel.com/docs/vercel-sandbox)：云沙箱基础设施
 - [E2B](https://e2b.dev)：云沙箱基础设施
 - [Boat](https://boat.dev)：云沙箱基础设施
+- [boxd](https://boxd.sh?ref=background-agents)：云虚拟机沙箱
 - [Cloudflare Workers](https://workers.cloudflare.com)：边缘计算
 - [OpenCode](https://opencode.ai)：编程智能体运行时（内置执行框架）
 - [Claude Agent SDK](https://docs.anthropic.com/en/docs/agent-sdk)：编程智能体运行时（Claude

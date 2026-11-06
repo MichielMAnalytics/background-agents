@@ -16,28 +16,30 @@ relatedCode:
   - packages/web/src/components/settings/sandbox-settings.tsx
   - packages/control-plane/src/sandbox/providers/vercel/provider.ts
   - packages/control-plane/src/sandbox/providers/boat-provider.ts
+  - docs/BOXD_SANDBOX_PROVIDER.md
+  - packages/control-plane/src/sandbox/providers/boxd-provider.ts
 ---
 
 This page compares the sandbox providers a deployment can run on: the operator picks one (`sandbox_provider` in the deployment configuration) for every session, and each runs the same [sandbox runtime](/reference/sandbox-environment) but differs in how sandboxes start, how saved state is kept, and which [sandbox settings](/configure/sandbox-settings) it honors.
 
 ## Which provider am I on?
 
-Users cannot switch providers from the app. Settings › Sandbox names the provider when it cannot honor a field, for example "Per-session CPU and memory overrides are unavailable for daytona; resources are configured by the deployment." A timeout-only note ("Per-session timeout overrides are unavailable for ...") appears on Daytona as well. No note means Modal, modal-vm, Vercel Sandboxes, or Boat; ask your operator which one.
+Users cannot switch providers from the app. Settings › Sandbox names the provider when it cannot honor a field, for example "Per-session CPU and memory overrides are unavailable for daytona; resources are configured by the deployment." A timeout-only note ("Per-session timeout overrides are unavailable for ...") appears on Daytona and boxd as well. No note means Modal, modal-vm, Vercel Sandboxes, or Boat; ask your operator which one.
 
 ## Comparison
 
-|                          | Modal                                     | modal-vm                                      | Daytona                                                                          | Vercel Sandboxes                                              | E2B                                                                                   | Boat                                                                 |
-| ------------------------ | ----------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Startup model            | Fresh sandbox from the base runtime image | Fresh Docker-capable Modal VM sandbox         | Persistent sandbox created from a base snapshot                                  | Fresh sandbox from a base-runtime snapshot                    | Fresh sandbox from a managed template                                                 | Persistent full-VM sandbox deployed from a saved snapshot            |
-| Saved-state model        | Filesystem snapshot restore               | Filesystem snapshot at shutdown, then restore | Persistent sandbox: stopped on inactivity or stale heartbeat, then started again | Filesystem snapshot at shutdown, then restore                 | Persistent sandbox: paused on inactivity, resumed on the next prompt                  | Persistent sandbox: archived on inactivity, resumed on a new machine |
-| Prebuilt images          | Yes (Modal image)                         | Yes (Modal VM image)                          | Yes, once the operator opens admission (snapshot)                                | Yes (snapshot)                                                | Yes (snapshot)                                                                        | Yes (saved snapshot)                                                 |
-| CPU and memory settings  | Yes                                       | Yes                                           | No                                                                               | Yes, mapped to vCPUs                                          | No                                                                                    | Yes, mapped to the smallest machine size that fits                   |
-| Sandbox timeout setting  | Yes                                       | Yes                                           | No                                                                               | Yes                                                           | Yes                                                                                   | Yes                                                                  |
-| Default sandbox lifetime | 2 hours; configurable                     | 2 hours; configurable                         | Persistent sandbox; the timeout setting is not honored                           | 45-minute sandbox lifetime; image builds capped at 35 minutes | Operator-set TTL (default 2 hours; about 1 hour on the Hobby tier); auto-pause at TTL | 2 hours; configurable up to 30 days; archived at the deadline        |
+|                          | Modal                                     | modal-vm                                      | Daytona                                                                          | Vercel Sandboxes                                              | E2B                                                                                   | Boat                                                                 | boxd                                                                                     |
+| ------------------------ | ----------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Startup model            | Fresh sandbox from the base runtime image | Fresh Docker-capable Modal VM sandbox         | Persistent sandbox created from a base snapshot                                  | Fresh sandbox from a base-runtime snapshot                    | Fresh sandbox from a managed template                                                 | Persistent full-VM sandbox deployed from a saved snapshot            | Persistent isolated full-VM sandbox restored from a memory-and-disk snapshot             |
+| Saved-state model        | Filesystem snapshot restore               | Filesystem snapshot at shutdown, then restore | Persistent sandbox: stopped on inactivity or stale heartbeat, then started again | Filesystem snapshot at shutdown, then restore                 | Persistent sandbox: paused on inactivity, resumed on the next prompt                  | Persistent sandbox: archived on inactivity, resumed on a new machine | Persistent sandbox: hibernated on inactivity (memory and disk), woken on the next prompt |
+| Prebuilt images          | Yes (Modal image)                         | Yes (Modal VM image)                          | Yes, once the operator opens admission (snapshot)                                | Yes (snapshot)                                                | Yes (snapshot)                                                                        | Yes (saved snapshot)                                                 | No                                                                                       |
+| CPU and memory settings  | Yes                                       | Yes                                           | No                                                                               | Yes, mapped to vCPUs                                          | No                                                                                    | Yes, mapped to the smallest machine size that fits                   | Yes, mapped to the smallest machine size that fits                                       |
+| Sandbox timeout setting  | Yes                                       | Yes                                           | No                                                                               | Yes                                                           | Yes                                                                                   | Yes                                                                  | No                                                                                       |
+| Default sandbox lifetime | 2 hours; configurable                     | 2 hours; configurable                         | Persistent sandbox; the timeout setting is not honored                           | 45-minute sandbox lifetime; image builds capped at 35 minutes | Operator-set TTL (default 2 hours; about 1 hour on the Hobby tier); auto-pause at TTL | 2 hours; configurable up to 30 days; archived at the deadline        | Persistent sandbox; the timeout setting is not honored                                   |
 
 "Yes" for CPU and memory means the `cpuCores` and `memoryMib` fields under Settings › Sandbox take effect. On providers marked "No", those fields are dropped from the session's effective settings. The same applies to `sandboxTimeoutMs` where the timeout column says "No". The settings page hides the fields the current provider cannot honor.
 
-Saved state matters for follow-up prompts: after confirmed shutdown, Modal, modal-vm, and Vercel can restore a saved snapshot into a new sandbox. Daytona, E2B, and Boat resume the retained sandbox in place.
+Saved state matters for follow-up prompts: after confirmed shutdown, Modal, modal-vm, and Vercel can restore a saved snapshot into a new sandbox. Daytona, E2B, Boat, and boxd resume the retained sandbox in place.
 
 The two saved-state models side by side:
 
@@ -54,10 +56,10 @@ flowchart TB
         s4 -- "next prompt" --> s5["New sandbox<br/>restores saved state"]
         s5 --> s2
     end
-    subgraph persist["Daytona, E2B, Boat"]
+    subgraph persist["Daytona, E2B, Boat, boxd"]
         direction TB
         p1["Persistent<br/>sandbox created"] --> p2["Prompt runs"]
-        p2 --> p3["Stopped (Daytona),<br/>paused (E2B) or<br/>archived (Boat)<br/>on inactivity"]
+        p2 --> p3["Stopped (Daytona),<br/>paused (E2B) or<br/>archived (Boat) or<br/>hibernated (boxd)<br/>on inactivity"]
         p3 -- "next prompt" --> p4["The same sandbox<br/>resumes with its<br/>workspace intact"]
         p4 --> p2
     end
@@ -108,6 +110,16 @@ flowchart TB
 - Boat sandboxes take every model API key from Settings › Secrets; there is no deployment-wide key.
 - Prebuilt images are Boat saved snapshots and share the account's saved-snapshot allowance with the deployment's base snapshot. A build past the allowance fails with `credit_required`; the operator removes unused snapshots or adds credit. See [Prebuilt images](/configure/prebuilt-images).
 
+## boxd
+
+- Sessions run in isolated, private Ubuntu virtual machines restored from a memory-and-disk snapshot the deployment builds. Idle sessions are hibernated after the shared inactivity timeout (10 minutes by default): boxd saves the machine's memory and disk and releases its host. The next prompt wakes the same machine with its files and running processes as they were. If boxd no longer has the machine, a fresh one is spawned.
+- `cpuCores` and `memoryMib` select the smallest boxd machine size that satisfies both (`1x4` 1 vCPU/4 GB, `2x8`, `4x16`, `8x32`, up to the org's quota). With both unset, the operator's default size applies. The sandbox timeout setting does not apply; the deployment's inactivity and execution timers stop the machine.
+- Prebuilt images are not available; every session starts from the base snapshot and runs `setup.sh` on its first boot.
+- Port 57073 is reserved on every boxd machine; a service or tunnel configured there fails the spawn.
+- Tunnel URLs are public, with no token; treat them like passwords and only expose services with their own authentication. The terminal, code-server and VNC keep their own logins.
+- Machines are isolated: no boxd CLI, metadata endpoint, or integrations of the operator's boxd account are reachable from a session.
+- boxd sandboxes take every model API key from Settings › Secrets; there is no deployment-wide key.
+
 ## Provider setup
 
 Provider selection and credentials are operator tasks documented in the repository:
@@ -116,6 +128,7 @@ Provider selection and credentials are operator tasks documented in the reposito
 - [Vercel Sandbox provider](https://github.com/ColeMurray/background-agents/blob/main/docs/VERCEL_SANDBOX_PROVIDER.md)
 - [E2B sandbox provider](https://github.com/ColeMurray/background-agents/blob/main/docs/E2B_SANDBOX_PROVIDER.md)
 - [Boat sandbox provider](https://github.com/ColeMurray/background-agents/blob/main/docs/BOAT_SANDBOX_PROVIDER.md)
+- [boxd sandbox provider](https://github.com/ColeMurray/background-agents/blob/main/docs/BOXD_SANDBOX_PROVIDER.md)
 - [Daytona prebuilds and admission](https://github.com/ColeMurray/background-agents/blob/main/docs/IMAGE_PREBUILD.md#daytona-prebuilds)
 
 When switching providers, keep the previous provider's credentials configured until its pending image cleanup has drained; cleanup runs against the provider each build was recorded on.
@@ -128,6 +141,7 @@ When switching providers, keep the previous provider's credentials configured un
 | Settings › Images shows "Prebuilds are paused for this deployment"         | Daytona with `daytona_prebuilds_enabled` off (the default)       | Toggles still record intent. The operator opens admission; see the Daytona link under Provider setup. |
 | A Vercel session fails to start after raising CPU or memory                | Requests above 8 vCPUs or 16 GB are rejected by Vercel           | Lower `cpuCores` or `memoryMib` under Settings › Sandbox.                                             |
 | A Boat session fails to start naming a reserved port                       | A service or tunnel port is one Boat's own services hold         | Move the port off 22, 6080, 8090, 8911, and 47984–48010 under Settings › Sandbox.                     |
+| A boxd session fails to start naming a reserved port                       | A service or tunnel port is the one boxd reserves                | Move the port off 57073 under Settings › Sandbox.                                                     |
 | An image build on Vercel times out before the configured build timeout     | Vercel caps image-build execution at 35 minutes                  | Shorten `setup.sh`; environment builds run one setup script per repository.                           |
 
 ## Next steps

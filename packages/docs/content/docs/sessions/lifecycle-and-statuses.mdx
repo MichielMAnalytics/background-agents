@@ -168,10 +168,10 @@ Saved filesystem state includes installed dependencies, built artifacts, and unc
 
 Not every provider restores from a saved filesystem:
 
-| Provider                | Resume model                                                                                                                                                  |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Modal, modal-vm, Vercel | A saved filesystem snapshot can be restored into a new sandbox after shutdown. Modal can also snapshot after a turn; modal-vm and Vercel skip those captures. |
-| Daytona, E2B, Boat      | The retained sandbox resumes in place after being stopped (Daytona), paused (E2B), or archived to a disk snapshot (Boat).                                     |
+| Provider                 | Resume model                                                                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Modal, modal-vm, Vercel  | A saved filesystem snapshot can be restored into a new sandbox after shutdown. Modal can also snapshot after a turn; modal-vm and Vercel skip those captures. |
+| Daytona, E2B, Boat, boxd | The retained sandbox resumes in place after being stopped (Daytona), paused (E2B), archived to a disk snapshot (Boat), or hibernated with its memory (boxd).  |
 
 The status labels are the same on both models. See [Sandbox providers](/configure/sandbox-providers).
 

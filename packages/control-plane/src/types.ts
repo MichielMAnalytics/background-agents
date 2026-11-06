@@ -60,7 +60,7 @@ export interface EnvConfig {
   ALLOWED_GITHUB_ORGS?: string;
   UNSAFE_ALLOW_ALL_USERS?: string;
   CF_ACCOUNT_ID?: string; // Cloudflare account ID
-  SANDBOX_PROVIDER?: string; // "modal" (default), "modal-vm", "daytona", "vercel", "e2b", or "boat"
+  SANDBOX_PROVIDER?: string; // "modal" (default), "modal-vm", "daytona", "vercel", "e2b", "boat", or "boxd"
   MODAL_WORKSPACE?: string; // Modal workspace name
   MODAL_ENVIRONMENT?: string; // Modal environment name for dashboard URLs
   MODAL_ENVIRONMENT_WEB_SUFFIX?: string; // Modal environment web suffix for endpoint URLs
@@ -94,6 +94,14 @@ export interface EnvConfig {
   BOAT_BASE_SNAPSHOT?: string; // Named Boat snapshot built by boat-infra; fresh sandboxes deploy from it
   BOAT_ORG?: string; // Optional Boat organization wallet sandboxes are billed to
   BOAT_SANDBOX_TYPE?: string; // Machine size when a session requests no resources: small, default (default), large, xlarge
+
+  BOXD_API_KEY?: string; // boxd API key (machine API auth + sandbox access password HMAC)
+  BOXD_BASE_SNAPSHOT?: string; // boxd snapshot built by boxd-infra; fresh sandboxes restore from it
+  BOXD_REGION?: string; // Optional boxd region machines are created in (fra, nyc, ...); the key's home region otherwise
+  BOXD_ORG?: string; // Optional boxd org machines are created in and billed to
+  BOXD_SANDBOX_SIZE?: string; // Machine size when a session requests no resources: 1x4, 2x8 (default), 4x16, 8x32
+  BOXD_LABELS?: string; // Optional labels for every machine, as comma-separated key=value pairs
+  BOXD_API_URL?: string; // Optional boxd API endpoint, for a non-production boxd cluster only
 
   // Sandbox lifecycle configuration
   SANDBOX_INACTIVITY_TIMEOUT_MS?: string; // Inactivity timeout in ms; defaults to DEFAULT_INACTIVITY_CONFIG.timeoutMs

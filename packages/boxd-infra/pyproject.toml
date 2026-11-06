@@ -1,0 +1,9 @@
+[project]
+name = "open-inspect-boxd"
+version = "0.1.0"
+description = "boxd base snapshot build for Open-Inspect coding agent"
+requires-python = ">=3.12"
+dependencies = ["boxd==0.3.0"]
+
+[tool.uv]
+package = false

@@ -36,6 +36,10 @@ def build_image(root: Path, provider: str) -> dict[str, Any]:
             root / "packages/boat-infra",
             ["uv", "run", "--frozen", "python", "build-template.py"],
         ),
+        "boxd": (
+            root / "packages/boxd-infra",
+            ["uv", "run", "--frozen", "python", "build-template.py"],
+        ),
     }
     if provider == "vercel":
         subprocess.run(["npm", "run", "build", "-w", "@open-inspect/shared"], cwd=root, check=True)

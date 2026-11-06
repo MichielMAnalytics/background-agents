@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestEnv } from "../router.test-support";
 import type { Env } from "../types";
-import { createSandboxProviderFromEnv } from "./provider-factory";
+import { createSandboxProviderFromEnv, parseBoxdLabels } from "./provider-factory";
 
 function createEnv(overrides: Partial<Env>): Env {
   return createTestEnv({ TOKEN_ENCRYPTION_KEY: "test-token-key", ...overrides });
@@ -98,6 +98,61 @@ describe("createSandboxProviderFromEnv", () => {
       supportsPersistentResume: true,
       supportsExplicitStop: true,
       supportsSnapshots: false,
+    });
+  });
+
+  it("requires boxd credentials and a base snapshot", () => {
+    expect(() =>
+      createSandboxProviderFromEnv(createEnv({ BOXD_API_KEY: "test-boxd-key" }), "boxd")
+    ).toThrow("BOXD_API_KEY and BOXD_BASE_SNAPSHOT are required");
+    expect(() =>
+      createSandboxProviderFromEnv(createEnv({ BOXD_BASE_SNAPSHOT: "open-inspect-abc" }), "boxd")
+    ).toThrow("BOXD_API_KEY and BOXD_BASE_SNAPSHOT are required");
+  });
+
+  it("rejects an unknown boxd machine size", () => {
+    const env = createEnv({
+      BOXD_API_KEY: "test-boxd-key",
+      BOXD_BASE_SNAPSHOT: "open-inspect-abc",
+      BOXD_SANDBOX_SIZE: "3x12",
+    });
+
+    expect(() => createSandboxProviderFromEnv(env, "boxd")).toThrow(
+      "BOXD_SANDBOX_SIZE must be one of 1x4, 2x8, 4x16, 8x32"
+    );
+  });
+
+  it("parses extra boxd machine labels and refuses a malformed pair", () => {
+    expect(parseBoxdLabels(" team=platform, overnight = yes ,")).toEqual({
+      team: "platform",
+      overnight: "yes",
+    });
+    expect(parseBoxdLabels(undefined)).toEqual({});
+    expect(() => parseBoxdLabels("novalue")).toThrow("BOXD_LABELS must be");
+    expect(() =>
+      createSandboxProviderFromEnv(
+        createEnv({ BOXD_API_KEY: "k", BOXD_BASE_SNAPSHOT: "s", BOXD_LABELS: "=x" }),
+        "boxd"
+      )
+    ).toThrow("BOXD_LABELS must be");
+  });
+
+  it("builds the boxd provider from its environment", () => {
+    const provider = createSandboxProviderFromEnv(
+      createEnv({
+        BOXD_API_KEY: "test-boxd-key",
+        BOXD_BASE_SNAPSHOT: "open-inspect-abc",
+        BOXD_REGION: "fra",
+        BOXD_ORG: "acme",
+      }),
+      "boxd"
+    );
+    expect(provider.name).toBe("boxd");
+    expect(provider.capabilities).toMatchObject({
+      supportsPersistentResume: true,
+      supportsExplicitStop: true,
+      supportsSnapshots: false,
+      supportsSandboxTimeout: false,
     });
   });
 

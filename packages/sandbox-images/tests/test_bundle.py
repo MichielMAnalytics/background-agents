@@ -165,6 +165,21 @@ def test_boat_hash_covers_launcher_builder_and_deployment(checkout, source):
     assert plan_image(checkout, "boat")["buildHash"] != before
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "packages/boxd-infra/launcher.sh",
+        "packages/boxd-infra/build-template.py",
+        "terraform/modules/boxd-infra/scripts/build-snapshot.sh",
+    ],
+)
+def test_boxd_hash_covers_launcher_builder_and_deployment(checkout, source):
+    before = plan_image(checkout, "boxd")["buildHash"]
+    path = checkout / source
+    path.write_text(path.read_text() + "\n")
+    assert plan_image(checkout, "boxd")["buildHash"] != before
+
+
 def test_pack_exports_runtime_requirements_from_uv_lock(checkout, tmp_path):
     lock = checkout / "packages/sandbox-runtime/uv.lock"
     packed = pack_bundle(checkout, "e2b", tmp_path / "bundles")

@@ -137,6 +137,23 @@ boat_base_snapshot = ""        # e.g., "open-inspect"
 # smallest size that fits it. One of small, default, large, xlarge.
 # boat_sandbox_type = "default"
 
+# boxd
+# Only required when sandbox_provider = "boxd" (https://boxd.sh?ref=background-agents)
+# - boxd_api_key: runtime key (control-plane → boxd API, sandbox access password HMAC)
+#                 AND snapshot-build auth. Console → API keys.
+# The boxd-infra Terraform module builds the snapshot automatically;
+# boxd_base_snapshot is the prefix of the name it saves (and the one fresh
+# machines restore from). 1-46 lowercase letters, digits or dashes.
+# See docs/BOXD_SANDBOX_PROVIDER.md.
+boxd_api_key = ""              # sensitive — runtime API key (also auths the build)
+boxd_base_snapshot = ""        # e.g., "open-inspect"
+# boxd_region = ""             # Optional region (fra, nyc, ...); empty uses the key's home region
+# boxd_org = ""                # Optional org machines are billed to; they are created private
+# boxd_machine_labels = {}     # Optional labels on every session machine, e.g. { team = "platform" }
+# Machine size for sessions that request no CPU or memory; a request picks the
+# smallest size that fits it. One of 1x4, 2x8, 4x16, 8x32.
+# boxd_sandbox_size = "2x8"
+
 # =============================================================================
 # GitHub App Credentials
 # =============================================================================
