@@ -65,6 +65,11 @@ export async function handleSessionPrompt(
   }
   const body = bodyResult.data;
 
+  // Uploading an attachment refuses tokens, so a token has none of its own to reference; an id it
+  // names could only be someone else's upload.
+  if (ctx.principal?.kind === "personal-access-token" && body.attachments !== undefined) {
+    return error("Attachments are not accepted from personal access tokens", 400);
+  }
   const attachments = validateAttachments(body.attachments);
   if (attachments instanceof Response) return attachments;
 
@@ -159,6 +164,7 @@ sessionPromptRoutes.post(
   admit({
     ...GITHUB_USER_OR_SERVICE_ROUTE,
     authorization: requireSession("collaborate"),
+    personalAccessTokens: "accept",
   }),
   (c) => dispatchSession(c, handleSessionPrompt)
 );

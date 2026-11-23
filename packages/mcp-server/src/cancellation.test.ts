@@ -63,15 +63,26 @@ describe.each([
     name: "import_skill_from_git",
     args: { repo_owner: "acme", repo_name: "skills", ref: "main" },
     previewPath: "/skills/import/preview",
+    firstResponse: preview,
     mutationPath: "/skills/import",
   },
   {
     name: "update_skill_from_git",
     args: { skill_id: "skill_1", ref: "main" },
     previewPath: "/skills/skill_1/reimport/preview",
+    firstResponse: preview,
     mutationPath: "/skills/skill_1/reimport",
   },
-])("$name cancellation", ({ name, args, previewPath, mutationPath }) => {
+  {
+    // Creating is the first write here: a call cancelled while it is in flight must not go on to
+    // prompt the session it created.
+    name: "create_session",
+    args: { prompt: "Investigate", repo_owner: "acme", repo_name: "web" },
+    previewPath: "/sessions",
+    firstResponse: { sessionId: "sess_1", status: "created" },
+    mutationPath: "/sessions/sess_1/prompt",
+  },
+])("$name cancellation", ({ name, args, previewPath, firstResponse, mutationPath }) => {
   it.each([true, false])("fences a pending write only when cancelled (%s)", async (cancel) => {
     const previewStarted = deferred<AbortSignal>();
     const previewResponse = deferred<Response>();
@@ -125,7 +136,7 @@ describe.each([
       const next = await mcpClient.callTool({ name: "list_skills", arguments: {} });
       expect(next.isError).toBeFalsy();
 
-      previewResponse.resolve(jsonResponse(preview));
+      previewResponse.resolve(jsonResponse(firstResponse));
       // The SDK suppresses a cancelled response before the application handler
       // settles, so awaiting only the client call would miss the late write.
       await handlerSettled.promise;
@@ -142,7 +153,7 @@ describe.each([
         expect(result.result?.isError).toBeFalsy();
       }
     } finally {
-      previewResponse.resolve(jsonResponse(preview));
+      previewResponse.resolve(jsonResponse(firstResponse));
       await mcpClient.close();
       await server.close();
     }

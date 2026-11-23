@@ -60,11 +60,22 @@ const BRANCH_NAME_PATTERN = /^[\w.\-/]+$/;
  * Whether a new session includes its owner's personal memory; undefined leaves it to their saved
  * default. People choose per session. Sessions an integration starts answer in places others read,
  * so they go without, except a Slack direct message, which is as private as a web session.
+ *
+ * The memory policy decides personal memory on the owner's own authorization, which it loads
+ * itself, so a token's grant never reaches it. A token therefore includes its owner's personal
+ * memory only when it was granted `memories.manage_own`.
  */
 function personalMemoryInclusion(
+  ctx: RequestContext,
   spawnSource: SpawnSource | undefined,
   body: Pick<CreateSessionInput, "includePersonalMemories" | "directMessage">
 ): boolean | undefined {
+  if (
+    ctx.principal?.kind === "personal-access-token" &&
+    !ctx.authorization?.permissions.includes("memories.manage_own")
+  ) {
+    return false;
+  }
   switch (spawnSource) {
     case "user":
       return body.includePersonalMemories;
@@ -113,6 +124,13 @@ export async function handleCreateSession(
   const enforcement = applyIdentityEnforcement(ctx, "session-create", parsed.raw);
   if (enforcement.rejection) return enforcement.rejection;
   const enforced = enforcement.enforced;
+
+  // A token's session resolves provider auth as unattended (below), and an explicit selection is
+  // resolved before that policy, so it would let a token bind an account the policy keeps from
+  // automated use.
+  if (ctx.principal?.kind === "personal-access-token" && body.providerSelections !== undefined) {
+    return error("Provider selections are not accepted from personal access tokens", 400);
+  }
 
   let repositoryContext: RepositoryPair | null;
   try {
@@ -284,7 +302,11 @@ export async function handleCreateSession(
   try {
     providerAuth = await resolveSessionProviderAuth(ctx.db, {
       explicit: body.providerSelections,
-      unattended: spawnSource !== undefined && spawnSource !== "user",
+      // A token cannot establish that a person is present, so its sessions follow the
+      // workspace's provider policy for automated use, as bot and automation sessions do.
+      unattended:
+        ctx.principal?.kind === "personal-access-token" ||
+        (spawnSource !== undefined && spawnSource !== "user"),
       harness,
     });
   } catch (e) {
@@ -318,7 +340,7 @@ export async function handleCreateSession(
     principal: { userId: resolvedUserId, ownerTeamId: teamId },
     repositories: scopeMembers,
     environmentId,
-    includePersonalMemories: personalMemoryInclusion(spawnSource, body),
+    includePersonalMemories: personalMemoryInclusion(ctx, spawnSource, body),
   });
 
   const input: SessionInitInput = {
@@ -382,6 +404,7 @@ sessionCreateRoutes.post(
     ...GITHUB_USER_OR_SERVICE_ROUTE,
     authorization: requirePermission("sessions.create"),
     serviceActorClaims: extractSessionActorProfileClaims,
+    personalAccessTokens: "accept",
   }),
   (c) => dispatch(c, handleCreateSession)
 );

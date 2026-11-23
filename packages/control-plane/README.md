@@ -782,14 +782,15 @@ Two independent checks bound what a token can do, and both must pass:
 Routes that accept tokens today are the ones the MCP server's tools use. `router.policy.test.ts`
 pins this list, so adding to it is a visible change:
 
-- reading sessions: `GET /sessions` and `/sessions/:id/{events,messages,diff}`
+- reading sessions: `GET /sessions` and `/sessions/:id{,/events,/messages,/diff}`
+- creating a session (`POST /sessions`) and prompting one (`POST /sessions/:id/prompt`)
 - reading automations: `GET /automations` and `/automations/:id{,/invocations,/runs/:runId}`
 - reading skills: `GET /skills` and `/skills/:id`
 - creating an automation (`POST /automations`) and triggering one (`POST /automations/:id/trigger`)
 - skill import and re-import, with their previews
 - reading one file of a session diff: `GET /sessions/:id/diff/:revisionId/files/:fileId`
 
-Two rules reach past route admission:
+Five rules reach past route admission:
 
 - **A manual run stays within the token's grant.** The trigger route passes the admitted permissions
   to the scheduler as a ceiling, and the execution check requires `sessions.create`, and
@@ -799,10 +800,34 @@ Two rules reach past route admission:
 - **A token's `skills.manage` needs `skills.read`.** Every token route that manages skills answers
   with skill or repository content, so issuing refuses `skills.manage` without `skills.read`
   (`permission_prerequisite_missing`), and narrowing drops a `skills.manage` whose `skills.read` did
-  not survive (`PERSONAL_ACCESS_TOKEN_GRANT_PREREQUISITES` in shared).
+  not survive (`PERSONAL_ACCESS_TOKEN_GRANT_PREREQUISITES` in shared). `sessions.collaborate` needs
+  `sessions.read` the same way: collaborating is admitted only past a session's read check, so
+  without it a token could prompt some sessions and not others.
+- **A token never reads sandbox URLs.** `GET /sessions/:id` strips the editor, terminal, and tunnel
+  URLs from a token's snapshot whatever it was granted, as it does for a reader without
+  `sessions.sandbox_access`. `sandbox-access` and `tunnel-urls` refuse tokens, and the snapshot must
+  not reopen them. Its `capabilities` likewise report only reading and collaborating for a token,
+  since the lifecycle, sandbox, deletion, and sharing routes refuse tokens. This bounds what a token
+  reads, not what a prompt can have the agent do in the sandbox.
+- **A token reaches its owner's personal memory only through its grant.** The memory policy judges
+  personal memory on the owner's own authorization, which it loads itself, so a token-created
+  session includes it only when the token holds `memories.manage_own`.
 
-Editing, pausing, or deleting automations, bulk skill import, and every session mutation, secret,
-and setting refuse tokens.
+A token-created session and its prompts are attributed to the token's owner as if they came from the
+browser (`spawnSource = "user"`, the owner as participant), and creation keeps every handler check:
+team membership (`not_member`) and the narrowed `repositories.use` / `environments.use` target
+checks. Some things differ from the browser:
+
+- A token's prompt is not eligible for the owner's personal MCP servers, and may not reference
+  attachments, which no token route can upload.
+- A token-created session resolves provider auth as unattended, so the workspace's provider setting
+  for automated use applies; a token cannot show that a person is present. A token may not send
+  `providerSelections`, since an explicit selection is resolved before that setting.
+- GitHub credentials are resolved from the stored user record, as for any non-browser principal.
+
+Editing, pausing, or deleting automations, bulk skill import, every other session mutation (stop,
+archive, pull request creation, attachments, children, visibility, and collaborators), the session
+websocket, secrets, and settings refuse tokens.
 
 The owner's workspace role still decides visibility within a granted permission. For example, an
 administrator's token that holds `sessions.read` sees the sessions the administrator sees.

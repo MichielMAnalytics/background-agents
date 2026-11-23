@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { MAX_AUTOMATION_NAME_LENGTH } from "@open-inspect/shared/types/automations";
 import { z } from "zod";
-import type { ControlPlaneClient } from "./client";
+import { ControlPlaneError, type ControlPlaneClient } from "./client";
 import { TOOLS, type ToolDefinition } from "./tools";
 
 function tool(name: string): ToolDefinition {
@@ -106,11 +106,13 @@ describe("tool surface", () => {
     const writes = tools.filter((entry) => entry.annotations?.readOnlyHint === false);
     expect(writes.map((entry) => entry.name).sort()).toEqual([
       "create_automation",
+      "create_session",
       "import_skill_from_git",
+      "send_prompt",
       "trigger_automation",
       "update_skill_from_git",
     ]);
-    expect(tools).toHaveLength(13);
+    expect(tools).toHaveLength(16);
     // Re-import moves the skill's current revision, which is what later
     // sessions load; a client reads this to decide how hard to prompt.
     const hints = Object.fromEntries(
@@ -119,6 +121,9 @@ describe("tool surface", () => {
     expect(hints.update_skill_from_git).toBe(true);
     expect(hints.import_skill_from_git).toBe(false);
     expect(hints.list_skills).toBe(false);
+    // Starting or steering a session adds work; it replaces nothing a later reader acts on.
+    expect(hints.create_session).toBe(false);
+    expect(hints.send_prompt).toBe(false);
 
     // The nested unions are the shapes most likely to fail: the import tool's
     // assignments, and the shared trigger-condition union that create_automation
@@ -131,7 +136,7 @@ describe("tool surface", () => {
     await mcpClient.close();
   });
 
-  it("keeps the writes to these four, each behind a route that accepts tokens", () => {
+  it("keeps the writes to these six, each behind a route that accepts tokens", () => {
     // A new write tool needs a control-plane route to accept personal access tokens first,
     // which is the review this list stands in for.
     const writes = TOOLS.filter((candidate) => !candidate.readOnly).map(
@@ -140,7 +145,9 @@ describe("tool surface", () => {
 
     expect(writes.sort()).toEqual([
       "create_automation",
+      "create_session",
       "import_skill_from_git",
+      "send_prompt",
       "trigger_automation",
       "update_skill_from_git",
     ]);
@@ -231,6 +238,146 @@ describe("session diffs", () => {
     });
 
     expect(getText).toHaveBeenCalledWith("/sessions/session%2F1/diff/rev%201/files/file%2F..%2F2");
+  });
+});
+
+describe("get_session", () => {
+  it("reads the snapshot without the timeline that get_session_events pages through", async () => {
+    const { client, get } = fakeClient({
+      get: () => ({
+        session: { id: "sess_1", status: "active", branchName: "open-inspect/fix" },
+        artifacts: [{ type: "pr", url: "https://github.com/acme/web/pull/1" }],
+        timeline: { events: [{ eventId: "e1" }], hasMore: true, cursor: null },
+        promptQueue: [],
+      }),
+    });
+
+    const result = await tool("get_session").run(client, { session_id: "sess/1" });
+
+    expect(get).toHaveBeenCalledWith("/sessions/sess%2F1");
+    expect(result).toEqual({
+      session: { id: "sess_1", status: "active", branchName: "open-inspect/fix" },
+      artifacts: [{ type: "pr", url: "https://github.com/acme/web/pull/1" }],
+      promptQueue: [],
+    });
+  });
+});
+
+describe("create_session", () => {
+  it("creates the session from the pushed branch, then sends its first prompt", async () => {
+    const { client, post } = fakeClient({
+      post: (path) =>
+        path === "/sessions"
+          ? { sessionId: "sess_1", status: "created" }
+          : { messageId: "msg_1", status: "queued" },
+    });
+
+    const result = await tool("create_session").run(client, {
+      prompt: "continue: finish the retry logic",
+      repo_owner: "acme/platform",
+      repo_name: "web",
+      branch: "my-wip",
+      team_id: "team_1",
+      model: "anthropic/claude-sonnet-4-6",
+    });
+
+    expect(post).toHaveBeenNthCalledWith(1, "/sessions", {
+      repoOwner: "acme/platform",
+      repoName: "web",
+      branch: "my-wip",
+      teamId: "team_1",
+      model: "anthropic/claude-sonnet-4-6",
+    });
+    expect(post).toHaveBeenNthCalledWith(2, "/sessions/sess_1/prompt", {
+      content: "continue: finish the retry logic",
+    });
+    expect(result).toEqual({
+      sessionId: "sess_1",
+      prompt: { messageId: "msg_1", status: "queued" },
+    });
+  });
+
+  it("sends no identity, and leaves omitted fields out of the body", async () => {
+    const { client, post } = fakeClient({
+      post: (path) =>
+        path === "/sessions" ? { sessionId: "sess_1", status: "created" } : { messageId: "m" },
+    });
+
+    await tool("create_session").run(client, { prompt: "Investigate", environment_id: "env_1" });
+
+    const [, body] = post.mock.calls[0];
+    expect(JSON.parse(JSON.stringify(body))).toEqual({ environmentId: "env_1" });
+  });
+
+  /** A create that succeeds, then a first prompt that fails with `failure`. */
+  function createThenPromptFails(failure: Error) {
+    return fakeClient({
+      post: (path) => {
+        if (path === "/sessions") return { sessionId: "sess_1", status: "created" };
+        throw failure;
+      },
+    });
+  }
+
+  it("names the created session when its first prompt is refused, so it is not created twice", async () => {
+    const { client, post } = createThenPromptFails(
+      new ControlPlaneError("POST /sessions/sess_1/prompt returned 403: permission_required", 403)
+    );
+
+    await expect(tool("create_session").run(client, { prompt: "Investigate" })).rejects.toThrow(
+      /Session sess_1 was created, but its first prompt was not sent: .*403.*send_prompt/
+    );
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["a timeout", new ControlPlaneError("POST /sessions/sess_1/prompt failed: timed out", null)],
+    ["a dropped connection", new TypeError("fetch failed")],
+  ])(
+    "does not call the first prompt unsent after %s, since it may already be queued",
+    async (_case, failure) => {
+      const { client } = createThenPromptFails(failure);
+
+      const outcome = tool("create_session").run(client, { prompt: "Investigate" });
+
+      await expect(outcome).rejects.toThrow(/Session sess_1 was created/);
+      await expect(outcome).rejects.toThrow(/may already be queued.*get_session/);
+      await expect(outcome).rejects.not.toThrow(/was not sent/);
+    }
+  );
+
+  it("refuses a creation response it does not recognize rather than prompting nothing", async () => {
+    const { client, post } = fakeClient({ post: () => ({ status: "created" }) });
+
+    await expect(tool("create_session").run(client, { prompt: "Investigate" })).rejects.toThrow(
+      /unrecognized session creation response/
+    );
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a blank prompt before creating anything", async () => {
+    const { client, post } = fakeClient({});
+
+    await expect(tool("create_session").run(client, { prompt: "  \n " })).rejects.toThrow();
+    expect(post).not.toHaveBeenCalled();
+  });
+});
+
+describe("send_prompt", () => {
+  it("posts the prompt to the session, camel-casing its options", async () => {
+    const { client, post } = fakeClient({ post: () => ({ messageId: "msg_2", status: "queued" }) });
+
+    const result = await tool("send_prompt").run(client, {
+      session_id: "sess/1",
+      content: "  also handle the timeout case  ",
+      reasoning_effort: "high",
+    });
+
+    expect(post).toHaveBeenCalledWith("/sessions/sess%2F1/prompt", {
+      content: "  also handle the timeout case  ",
+      reasoningEffort: "high",
+    });
+    expect(result).toEqual({ messageId: "msg_2", status: "queued" });
   });
 });
 

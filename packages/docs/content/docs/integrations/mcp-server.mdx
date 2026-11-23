@@ -1,10 +1,10 @@
 ---
 title: MCP server
-description: Let Claude Code or another MCP client investigate sessions and automation runs, and optionally create and run automations or import skills, through a personal access token.
+description: Let Claude Code or another MCP client investigate sessions and automation runs, and optionally start and steer sessions, create and run automations, or import skills, through a personal access token.
 audience: user
 owner: integrations
 status: published
-lastReviewed: "2026-10-31"
+lastReviewed: "2026-11-22"
 relatedCode:
   - packages/mcp-server/README.md
   - packages/mcp-server/src/tools.ts
@@ -13,7 +13,7 @@ relatedCode:
   - packages/control-plane/src/router.policy.test.ts
 ---
 
-The OpenInspect MCP server lets an MCP client such as Claude Code read your sessions and automation runs, and optionally create and run automations or import skills, without opening the web UI. It runs on your machine and authenticates with a [personal access token](/integrations/personal-access-tokens).
+The OpenInspect MCP server lets an MCP client such as Claude Code read your sessions and automation runs, and optionally start and steer sessions, create and run automations, or import skills, without opening the web UI. It runs on your machine and authenticates with a [personal access token](/integrations/personal-access-tokens).
 
 ## Set it up
 
@@ -38,21 +38,24 @@ The control plane URL must use `https://`; plain `http://` is accepted only for 
 
 ## What it can do
 
-| Tool                                                                                                       | Needs the token to hold                                                                         |
-| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `list_sessions`, `get_session_events`, `get_session_messages`, `get_session_diff`, `get_session_diff_file` | **Read sessions**                                                                               |
-| `list_automations`, `list_automation_invocations`, `get_automation_run`                                    | **Read automations**                                                                            |
-| `list_skills`                                                                                              | **Read skills**                                                                                 |
-| `create_automation`                                                                                        | **Create automations**, **Create sessions**, and use of its targets                             |
-| `trigger_automation`                                                                                       | **Run your automations** or **Run any automation**, **Create sessions**, and use of its targets |
-| `import_skill_from_git`, `update_skill_from_git`                                                           | **Manage skills** (administrators), which always comes with **Read skills**                     |
+| Tool                                                                                                                      | Needs the token to hold                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `list_sessions`, `get_session`, `get_session_events`, `get_session_messages`, `get_session_diff`, `get_session_diff_file` | **Read sessions**                                                                               |
+| `create_session`                                                                                                          | **Create sessions**, **Read sessions**, **Collaborate in sessions**, and use of its target      |
+| `send_prompt`                                                                                                             | **Read sessions** and **Collaborate in sessions**                                               |
+| `list_automations`, `list_automation_invocations`, `get_automation_run`                                                   | **Read automations**                                                                            |
+| `list_skills`                                                                                                             | **Read skills**                                                                                 |
+| `create_automation`                                                                                                       | **Create automations**, **Create sessions**, and use of its targets                             |
+| `trigger_automation`                                                                                                      | **Run your automations** or **Run any automation**, **Create sessions**, and use of its targets |
+| `import_skill_from_git`, `update_skill_from_git`                                                                          | **Manage skills** (administrators), which always comes with **Read skills**                     |
 
-A token without a tool's permission gets an error, which usually names the missing permission or points to the tool's description, where the needed grant is stated. The token never exceeds your own role or your workspace's [token policy](/administration/personal-access-tokens), and nothing it does can delete or pause an automation, delete a skill, or reach secrets or workspace settings. A run started with `trigger_automation` uses only what the token was granted, even where your role allows more.
+A token without a tool's permission gets an error, which usually names the missing permission or points to the tool's description, where the needed grant is stated. The token never exceeds your own role or your workspace's [token policy](/administration/personal-access-tokens), and nothing it does can stop, archive, or delete a session, open a session's sandbox editor, terminal, or tunnels, delete or pause an automation, delete a skill, or reach secrets or workspace settings. A run started with `trigger_automation` uses only what the token was granted, even where your role allows more.
 
 ## Keep the assistant in check
 
 Session transcripts and diffs are content the agent and your repositories produced, and they go straight into the assistant's context. Treat them as untrusted. Text in a session can try to persuade the assistant to call a write tool, and that call would act with your authority:
 
+- A session started or prompted this way runs its instructions in a sandbox, as you, straight away. The agent there can run any command the sandbox allows, with that session's secrets and repository access, and can push branches and open pull requests. Withholding the sandbox URLs from a token does not limit this.
 - An automation runs its instructions later, in a sandbox, as you.
 - A skill assigned globally loads into every later session in the workspace.
 

@@ -106,6 +106,11 @@ describe("grant prerequisites", () => {
     });
     expect(unmetGrantPrerequisite(["skills.manage", "skills.read"])).toBeNull();
     expect(unmetGrantPrerequisite(["skills.read"])).toBeNull();
+    expect(unmetGrantPrerequisite(["sessions.create", "sessions.collaborate"])).toEqual({
+      permission: "sessions.collaborate",
+      requires: "sessions.read",
+    });
+    expect(unmetGrantPrerequisite(["sessions.read", "sessions.collaborate"])).toBeNull();
   });
 
   it("drops what a grant cannot exercise for want of a prerequisite", () => {
@@ -115,6 +120,9 @@ describe("grant prerequisites", () => {
     expect(withGrantPrerequisitesMet(["skills.read", "skills.manage"])).toEqual([
       "skills.read",
       "skills.manage",
+    ]);
+    expect(withGrantPrerequisitesMet(["sessions.create", "sessions.collaborate"])).toEqual([
+      "sessions.create",
     ]);
   });
 });

@@ -1,8 +1,8 @@
 # @open-inspect/mcp-server
 
 MCP server over the Open-Inspect control plane. It runs locally over stdio, so an MCP client such as
-Claude Code or an IDE can inspect sessions, read automation runs, create and run automations, and
-manage skills without the web UI.
+Claude Code or an IDE can inspect sessions, start and steer them, read automation runs, create and
+run automations, and manage skills without the web UI.
 
 ## Security model
 
@@ -28,12 +28,13 @@ give it the shortest lifetime that works.
 
 ### Choose the grant for what you want the assistant to do
 
-| You want the assistant to…               | Grant                                                                                         |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Investigate sessions and automation runs | `sessions.read`, `automations.read`, `skills.read`                                            |
-| Also run existing automations            | add `automations.trigger.own` (or `.any`), `sessions.create`, and the targets' use permission |
-| Also create automations                  | add `automations.create`, `sessions.create`, and `repositories.use` and/or `environments.use` |
-| Also import and update skills            | add `skills.manage` (the picker adds `skills.read` with it)                                   |
+| You want the assistant to…               | Grant                                                                                                                         |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Investigate sessions and automation runs | `sessions.read`, `automations.read`, `skills.read`                                                                            |
+| Also hand work off to sessions and steer | add `sessions.create`, `sessions.collaborate` (which needs `sessions.read`), and `repositories.use` and/or `environments.use` |
+| Also run existing automations            | add `automations.trigger.own` (or `.any`), `sessions.create`, and the targets' use permission                                 |
+| Also create automations                  | add `automations.create`, `sessions.create`, and `repositories.use` and/or `environments.use`                                 |
+| Also import and update skills            | add `skills.manage` (the picker adds `skills.read` with it)                                                                   |
 
 The **Read-only** button in the token picker selects the first row and every other read permission
 your role has and your workspace allows.
@@ -45,6 +46,9 @@ that content goes straight into your assistant's context. Treat it as untrusted.
 transcript or diff can ask the assistant to call a write tool. A write tool used that way acts with
 your authority:
 
+- A session started or prompted this way runs those instructions in a sandbox, as you, straight
+  away. It has your repository and environment access, and the secrets sessions receive, and it can
+  push branches and open pull requests.
 - An automation runs its instructions later, in a sandbox, as you. It has your repository and
   environment access, and the secrets those sessions receive.
 - A skill with a `global` assignment loads into every later session in the workspace, not just
@@ -58,8 +62,8 @@ Three things limit this:
   whether your client asks before running the tool depends on its settings, and a client set to
   approve tools automatically will not ask. Check yours before you grant write permissions, and read
   what a write is about to create before you approve it.
-- Automations and skills created this way are visible in the dashboard and audit log, and you can
-  delete them there.
+- Sessions, automations, and skills created this way are visible in the dashboard and audit log. You
+  can stop or archive a session, and delete an automation or skill, there.
 
 For investigation, a read-only token is the right default.
 
@@ -109,25 +113,28 @@ check that the command printed something.
 
 Each tool's description states the grant it needs, so the assistant can tell you what is missing.
 
-| Tool                          | Route                                              | Grant                                                  |
-| ----------------------------- | -------------------------------------------------- | ------------------------------------------------------ |
-| `list_sessions`               | `GET /sessions`                                    | `sessions.read`                                        |
-| `get_session_events`          | `GET /sessions/:id/events`                         | `sessions.read`                                        |
-| `get_session_messages`        | `GET /sessions/:id/messages`                       | `sessions.read`                                        |
-| `get_session_diff`            | `GET /sessions/:id/diff`                           | `sessions.read`                                        |
-| `get_session_diff_file`       | `GET /sessions/:id/diff/:revisionId/files/:fileId` | `sessions.read`                                        |
-| `list_automations`            | `GET /automations`                                 | `automations.read`                                     |
-| `list_automation_invocations` | `GET /automations/:id/invocations`                 | `automations.read`                                     |
-| `get_automation_run`          | `GET /automations/:id/runs/:runId`                 | `automations.read`                                     |
-| `create_automation`           | `POST /automations`                                | `automations.create`, `sessions.create`                |
-| `trigger_automation`          | `POST /automations/:id/trigger`                    | `automations.trigger.own` or `.any`, `sessions.create` |
-| `list_skills`                 | `GET /skills`                                      | `skills.read`                                          |
-| `import_skill_from_git`       | `POST /skills/import` (+ preview)                  | `skills.read`, `skills.manage`                         |
-| `update_skill_from_git`       | `POST /skills/:id/reimport` (+ …)                  | `skills.read`, `skills.manage`                         |
+| Tool                          | Route                                              | Grant                                                      |
+| ----------------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
+| `list_sessions`               | `GET /sessions`                                    | `sessions.read`                                            |
+| `get_session`                 | `GET /sessions/:id`                                | `sessions.read`                                            |
+| `get_session_events`          | `GET /sessions/:id/events`                         | `sessions.read`                                            |
+| `get_session_messages`        | `GET /sessions/:id/messages`                       | `sessions.read`                                            |
+| `get_session_diff`            | `GET /sessions/:id/diff`                           | `sessions.read`                                            |
+| `get_session_diff_file`       | `GET /sessions/:id/diff/:revisionId/files/:fileId` | `sessions.read`                                            |
+| `create_session`              | `POST /sessions`, then its first prompt            | `sessions.create`, `sessions.read`, `sessions.collaborate` |
+| `send_prompt`                 | `POST /sessions/:id/prompt`                        | `sessions.read`, `sessions.collaborate`                    |
+| `list_automations`            | `GET /automations`                                 | `automations.read`                                         |
+| `list_automation_invocations` | `GET /automations/:id/invocations`                 | `automations.read`                                         |
+| `get_automation_run`          | `GET /automations/:id/runs/:runId`                 | `automations.read`                                         |
+| `create_automation`           | `POST /automations`                                | `automations.create`, `sessions.create`                    |
+| `trigger_automation`          | `POST /automations/:id/trigger`                    | `automations.trigger.own` or `.any`, `sessions.create`     |
+| `list_skills`                 | `GET /skills`                                      | `skills.read`                                              |
+| `import_skill_from_git`       | `POST /skills/import` (+ preview)                  | `skills.read`, `skills.manage`                             |
+| `update_skill_from_git`       | `POST /skills/:id/reimport` (+ …)                  | `skills.read`, `skills.manage`                             |
 
-`create_automation` and `trigger_automation` also need `repositories.use` or `environments.use` for
-the automation's targets, the same checks you face in the web UI. A triggered run uses only what the
-token was granted, even where your role allows more.
+`create_session`, `create_automation`, and `trigger_automation` also need `repositories.use` or
+`environments.use` for their targets, the same checks you face in the web UI. A triggered run uses
+only what the token was granted, even where your role allows more.
 
 `get_session_diff` lists a diff's changed files without their patches; `get_session_diff_file` reads
 one file's patch, using the revision and file ids from that list. `list_automation_invocations`
@@ -137,6 +144,36 @@ reads one child run by its id.
 `get_session_events`, `get_session_messages`, `list_automations`, and `list_skills` are paged. Pass
 the cursor from a response back to continue. `list_automations` also filters by name (`search`) and
 by target repository (`repo_owner`, `repo_name`, either alone).
+
+### Session writes
+
+The session tools hand work off from your machine to a cloud session: push a branch, start a session
+from it, and steer it while it runs.
+
+- `create_session` takes the first prompt and a target: one repository (`repo_owner`, `repo_name`,
+  and an optional `branch` to start from) or one `environment_id`. It also takes an optional
+  `team_id`, `visibility`, `title`, `harness`, `model`, and `reasoning_effort`. It creates the
+  session, then sends the prompt. If the prompt is refused, the error names the session that was
+  created, so the assistant sends the prompt with `send_prompt` rather than starting another. If the
+  prompt times out or the connection drops, it may already be queued, so the error says to read the
+  session with `get_session` before sending it again.
+- `send_prompt` queues a follow-up prompt behind whatever the session is processing. It works only
+  on sessions you may collaborate on.
+- `get_session` reports whether the session is still working, the branch the agent works on, and its
+  artifacts, including any pull request. Read what it did with `get_session_events`.
+
+The session and its prompts are attributed to you, with three differences from the web UI:
+
+- Prompts sent with a token do not use your personal MCP connections.
+- A session the token starts includes your personal memory only if the token holds
+  `memories.manage_own`.
+- A session the token starts follows the workspace's provider setting for automated use, since a
+  token cannot show that a person is at the keyboard.
+
+A token's `sessions.collaborate` needs `sessions.read`, and the picker adds it. Attachments cannot
+be sent with a prompt. Sandbox access stays in the browser: no tool returns the sandbox's editor,
+terminal, or tunnel URLs, and the token cannot stop, archive, or open a pull request for a session.
+Ask the agent to open one in a prompt.
 
 ### Automation writes
 

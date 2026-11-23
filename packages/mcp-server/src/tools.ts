@@ -35,8 +35,14 @@ import {
   skillResponseSchema,
   skillSchema,
 } from "@open-inspect/shared/types/skills";
+import { promptContentSchema } from "@open-inspect/shared/types/prompts";
+import type {
+  CreateSessionRequest,
+  SendPromptRequest,
+} from "@open-inspect/shared/types/session-api";
+import { sessionVisibilitySchema } from "@open-inspect/shared/types/teams";
 import { z } from "zod";
-import type { ControlPlaneClient } from "./client";
+import { ControlPlaneError, type ControlPlaneClient } from "./client";
 
 /**
  * Page caps, matching what the control-plane handlers themselves enforce.
@@ -96,7 +102,31 @@ function defineTool<const Shape extends z.ZodRawShape>(spec: ToolSpec<Shape>): T
   return { ...spec, run: async (client, args) => spec.run(client, schema.parse(args)) };
 }
 
-const sessionId = z.string().min(1).describe("Session id, as returned by list_sessions");
+const sessionId = z
+  .string()
+  .min(1)
+  .describe("Session id, as returned by list_sessions or create_session");
+
+const promptContent = promptContentSchema
+  // Refused when blank, as the control plane refuses it, but sent as written.
+  .refine((content) => content.trim().length > 0, "The prompt is empty")
+  .describe("What the agent should do, in the words a person would type into the session");
+
+/**
+ * Send one prompt as the token's owner. The control plane names the author from the token, so the
+ * body carries only the prompt itself.
+ */
+function sendPrompt(
+  client: ControlPlaneClient,
+  session: string,
+  prompt: { content: string; model?: string; reasoningEffort?: string }
+) {
+  return client.post(`/sessions/${encodeURIComponent(session)}/prompt`, {
+    content: prompt.content,
+    model: prompt.model,
+    reasoningEffort: prompt.reasoningEffort,
+  } satisfies SendPromptRequest);
+}
 
 const automationId = z
   .string()
@@ -227,6 +257,27 @@ export const TOOLS: ToolDefinition[] = [
       }),
   }),
   defineTool({
+    name: "get_session",
+    requires: "sessions.read",
+    title: "Read a session's state",
+    readOnly: true,
+    description:
+      "Read one session's current state: its status, whether the agent is still processing, the " +
+      "repository and base branch, the branch the agent works on (branchName), queued prompts, " +
+      "and its artifacts, including any pull request it opened. Use to tell whether a session " +
+      "is done and which branch to fetch. Omits the timeline; read that with " +
+      "get_session_events. Sandbox editor and tunnel URLs are never returned to a token.",
+    inputSchema: { session_id: sessionId },
+    run: async (client, args) => {
+      const snapshot = await client.get(`/sessions/${encodeURIComponent(args.session_id)}`);
+      // The snapshot embeds the newest page of the timeline for the web client's first paint.
+      // get_session_events pages through it properly, so repeating it here only costs context.
+      if (typeof snapshot !== "object" || snapshot === null) return snapshot;
+      const { timeline: _timeline, ...state } = snapshot as Record<string, unknown>;
+      return state;
+    },
+  }),
+  defineTool({
     name: "get_session_events",
     requires: "sessions.read",
     title: "Read a session timeline",
@@ -302,6 +353,137 @@ export const TOOLS: ToolDefinition[] = [
         `/sessions/${encodeURIComponent(args.session_id)}/diff` +
           `/${encodeURIComponent(args.revision_id)}/files/${encodeURIComponent(args.file_id)}`
       ),
+  }),
+  defineTool({
+    name: "create_session",
+    requires:
+      "sessions.create, sessions.read, and sessions.collaborate, plus repositories.use or " +
+      "environments.use for its target",
+    title: "Start a session",
+    readOnly: false,
+    description:
+      "Start a new coding session as the token's owner and send it its first prompt. The agent " +
+      "runs in a cloud sandbox and can change code, run commands, push branches, and open pull " +
+      "requests in the target repository. To hand off local work, push a branch and pass it as " +
+      "branch so the session starts from it. Returns the sessionId; follow progress with " +
+      "get_session and get_session_events, and steer with send_prompt. Target one repository " +
+      "(repo_owner and repo_name, optionally branch) or one environment, not both; with neither, " +
+      "the session has no repository. Not idempotent: if the call fails without returning a " +
+      "sessionId, look for the session with list_sessions before creating another.",
+    inputSchema: {
+      prompt: promptContent,
+      repo_owner: repoOwner.optional(),
+      repo_name: repoName.optional(),
+      branch: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Branch the session checks out and starts from. Defaults to the repository's default " +
+            "branch. Needs repo_owner and repo_name."
+        ),
+      environment_id: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Environment (env_…) whose repositories the session starts with"),
+      team_id: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Team (team_…) that will own the session, which the owner must belong to. Required " +
+            "where the workspace requires a team on creation; omitted, the session is personal."
+        ),
+      visibility: sessionVisibilitySchema
+        .optional()
+        .describe("Who can see the session. Defaults to the team's default, or the workspace."),
+      title: z.string().min(1).optional().describe("Display title for the session"),
+      harness: harnessIdSchema
+        .optional()
+        .describe("Agent harness. Defaults to the installation's built-in harness."),
+      model: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Model the session uses. Defaults to the installation's default model."),
+      reasoning_effort: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Reasoning effort, where the selected model takes one"),
+    },
+    run: async (client, args) => {
+      const created = z.object({ sessionId: z.string().min(1) }).safeParse(
+        await client.post("/sessions", {
+          repoOwner: args.repo_owner,
+          repoName: args.repo_name,
+          branch: args.branch,
+          environmentId: args.environment_id,
+          teamId: args.team_id,
+          visibility: args.visibility,
+          title: args.title,
+          harness: args.harness,
+          model: args.model,
+          reasoningEffort: args.reasoning_effort,
+        } satisfies CreateSessionRequest)
+      );
+      if (!created.success) {
+        throw new Error("Control plane returned an unrecognized session creation response");
+      }
+      const { sessionId: id } = created.data;
+      try {
+        const prompt = await sendPrompt(client, id, { content: args.prompt });
+        return { sessionId: id, prompt };
+      } catch (cause) {
+        // The session exists either way. Name it, so the model works with this session rather
+        // than starting a second one.
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        // Only an HTTP answer says the control plane refused the prompt. A timeout or a dropped
+        // connection can come after the prompt was queued, and resending it would repeat the work.
+        if (cause instanceof ControlPlaneError && cause.status !== null) {
+          throw new Error(
+            `Session ${id} was created, but its first prompt was not sent: ${reason}. Send it ` +
+              "with send_prompt rather than creating another session."
+          );
+        }
+        throw new Error(
+          `Session ${id} was created, but whether its first prompt arrived is unknown: ${reason}. ` +
+            "It may already be queued, so read the session with get_session before sending it " +
+            "again with send_prompt, and do not create another session."
+        );
+      }
+    },
+  }),
+  defineTool({
+    name: "send_prompt",
+    requires: "sessions.read and sessions.collaborate",
+    title: "Send a prompt to a session",
+    readOnly: false,
+    description:
+      "Send a follow-up prompt to an existing session as the token's owner, to steer or extend " +
+      "its work. It queues behind any prompt the session is already processing. Returns the " +
+      "messageId. Works only on sessions the owner may collaborate on.",
+    inputSchema: {
+      session_id: sessionId,
+      content: promptContent,
+      model: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Model for this prompt. Defaults to the session's model."),
+      reasoning_effort: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Reasoning effort for this prompt, where the model takes one"),
+    },
+    run: (client, args) =>
+      sendPrompt(client, args.session_id, {
+        content: args.content,
+        model: args.model,
+        reasoningEffort: args.reasoning_effort,
+      }),
   }),
   defineTool({
     name: "list_automations",

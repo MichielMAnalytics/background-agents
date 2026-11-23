@@ -15,7 +15,7 @@ import {
 import { z } from "zod";
 import { UserStore } from "../db/user-store";
 import { SessionIndexStore } from "../db/session-index";
-import { checkSessionAccess } from "@open-inspect/shared";
+import { checkSessionAccess, type SessionCapabilities } from "@open-inspect/shared";
 import { SessionCollaboratorStore } from "../db/session-collaborators";
 import { TeamMembershipStore } from "../db/team-memberships";
 import {
@@ -183,6 +183,26 @@ async function handleParticipantProfiles(
   return Response.json({ profiles } satisfies SessionParticipantProfilesResponse);
 }
 
+/**
+ * The capabilities a snapshot reports, limited for a token to what the routes that accept tokens
+ * let it do: read and prompt. Lifecycle, sandbox, deletion, and sharing routes refuse tokens
+ * whatever the grant holds, so reporting them would tell a client it can do what it cannot.
+ */
+function tokenReachableCapabilities(
+  capabilities: SessionCapabilities,
+  viaToken: boolean
+): SessionCapabilities {
+  if (!viaToken) return capabilities;
+  return {
+    ...capabilities,
+    canManageLifecycle: false,
+    canDelete: false,
+    canSandbox: false,
+    canManageCollaborators: false,
+    canChangeVisibility: false,
+  };
+}
+
 async function handleSessionSnapshot(
   _request: Request,
   env: Env,
@@ -213,9 +233,15 @@ async function handleSessionSnapshot(
     ctx.sessionAdmission?.row.collaboratorIds ??
     (await new SessionCollaboratorStore(ctx.db).listUserIds(sessionId));
   const accessRow = { ...row, ownerUserId: row.userId ?? null, collaboratorIds: collaborators };
-  const sandboxAllowed = resolverDecides(teamsEnforcementMode(ctx, env), accessRow, "sandbox")
-    ? checkSessionAccess(viewer, accessRow, "sandbox").allowed
-    : ctx.authorization?.permissions.includes("sessions.sandbox_access");
+  // Sandbox URLs carry the agent's full authority, and the routes that hand them out
+  // (`sandbox-access`, `tunnel-urls`) refuse tokens, so a token never reads them here either,
+  // whatever it was granted.
+  const viaToken = ctx.principal?.kind === "personal-access-token";
+  const sandboxAllowed =
+    !viaToken &&
+    (resolverDecides(teamsEnforcementMode(ctx, env), accessRow, "sandbox")
+      ? checkSessionAccess(viewer, accessRow, "sandbox").allowed
+      : ctx.authorization?.permissions.includes("sessions.sandbox_access"));
   const snapshot = sandboxAllowed ? parsed.data : redactSessionSnapshotSandboxAccess(parsed.data);
   snapshot.session = {
     ...snapshot.session,
@@ -223,7 +249,10 @@ async function handleSessionSnapshot(
     ownerTeamId: row.ownerTeamId,
     visibility: row.visibility,
     collaborators: [...collaborators],
-    capabilities: effectiveSessionCapabilities(viewer, accessRow, teamsEnforcementMode(ctx, env)),
+    capabilities: tokenReachableCapabilities(
+      effectiveSessionCapabilities(viewer, accessRow, teamsEnforcementMode(ctx, env)),
+      viaToken
+    ),
   };
   const headers = new Headers(response.headers);
   headers.delete("Content-Length");
@@ -368,7 +397,11 @@ sessionRuntimeProxyRoutes.get(
 );
 sessionRuntimeProxyRoutes.get(
   "/sessions/:id",
-  admit({ ...SCM_AGNOSTIC_HUMAN_USER_ROUTE, authorization: requireSession("read") }),
+  admit({
+    ...SCM_AGNOSTIC_HUMAN_USER_ROUTE,
+    authorization: requireSession("read"),
+    personalAccessTokens: "accept",
+  }),
   (c) => dispatchSession(c, handleSessionSnapshot)
 );
 sessionRuntimeProxyRoutes.post(
