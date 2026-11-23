@@ -46,7 +46,14 @@ from .claude_env import (
     write_clean_env_wrapper,
 )
 from .claude_logging import ClaudeTrajectoryLogger
-from .claude_mcp import McpStatusClient, check_managed_mcp, mcp_policy_settings, mcp_server_options
+from .claude_mcp import (
+    MCP_CONFIG_FILE,
+    McpStatusClient,
+    check_managed_mcp,
+    mcp_policy_settings,
+    mcp_server_options,
+    write_mcp_config,
+)
 from .claude_translate import ClaudeTranslator, ClaudeTurnState
 from .tools import OI_TOOL_SERVER_NAME, ControlPlaneToolClient, ToolServerConfig
 
@@ -275,6 +282,7 @@ class ClaudeHarness:
 
     async def close(self) -> None:
         await self._disconnect()
+        (self.config.config_dir / MCP_CONFIG_FILE).unlink(missing_ok=True)
         if self._tool_client is not None:
             await self._tool_client.aclose()
             self._tool_client = None
@@ -307,11 +315,11 @@ class ClaudeHarness:
         """``ClaudeAgentOptions`` from the session's inputs (§5.1 of the design)."""
         if self.credential is None or self.wrapper_path is None or self.session_id is None:
             raise RuntimeError("Claude harness is not open")
-        mcp_servers: dict[str, Any] = mcp_server_options(
-            self.config.mcp_servers, self._managed_mcp_allowed
-        )
+        session_servers = mcp_server_options(self.config.mcp_servers, self._managed_mcp_allowed)
         allowed_tools = [*ALLOWED_TOOLS]
-        allowed_tools.extend(f"mcp__{name}__*" for name in mcp_servers)
+        allowed_tools.extend(f"mcp__{name}__*" for name in session_servers)
+        # Only the in-process tool server goes inline; it carries no secrets.
+        mcp_servers: dict[str, Any] = {}
         if self._tool_client is not None:
             if self._tool_server is None:
                 factory = self._tool_server_factory or _default_tool_server
@@ -344,6 +352,9 @@ class ClaudeHarness:
         }
         if self.config.add_dirs:
             kwargs["add_dirs"] = [str(directory) for directory in self.config.add_dirs]
+        if session_servers:
+            config_path = write_mcp_config(self.config.config_dir, session_servers)
+            kwargs["extra_args"] = {"mcp-config": str(config_path)}
         if self._resume_on_connect:
             kwargs["resume"] = self.session_id
         else:

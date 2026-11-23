@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -199,9 +200,17 @@ class TestOptions:
         }
         assert options["env"]["CLAUDE_CONFIG_DIR"] == str(tmp_path / "claude")
         assert options["env"]["ANTHROPIC_API_KEY"] == "sk-ant-key"
-        assert options["mcp_servers"] == {
-            "linear": {"type": "http", "url": "https://mcp.linear", "headers": {"A": "b"}},
-            "local": {"type": "stdio", "command": "npx", "args": ["server"], "env": {"K": "v"}},
+        # Headers and env can hold tokens, so they go to a file only this user
+        # can read, never into the CLI's argv where any process sees them.
+        assert options["mcp_servers"] == {}
+        config_path = tmp_path / "claude" / "mcp-servers.json"
+        assert options["extra_args"] == {"mcp-config": str(config_path)}
+        assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
+        assert json.loads(config_path.read_text()) == {
+            "mcpServers": {
+                "linear": {"type": "http", "url": "https://mcp.linear", "headers": {"A": "b"}},
+                "local": {"type": "stdio", "command": "npx", "args": ["server"], "env": {"K": "v"}},
+            }
         }
         assert "mcp__linear__*" in options["allowed_tools"]
         assert "mcp__local__*" in options["allowed_tools"]

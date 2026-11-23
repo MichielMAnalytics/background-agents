@@ -4,6 +4,8 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
+from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
 
 from sandbox_runtime.harness.base import HarnessPrompt
 from sandbox_runtime.harness.claude_mcp import (
@@ -11,7 +13,14 @@ from sandbox_runtime.harness.claude_mcp import (
     check_managed_mcp,
     mcp_server_options,
 )
-from tests.claude_fakes import FakeSdkClient, Harness, NativeMcpState, _result, _run
+from tests.claude_fakes import (
+    FakeSdkClient,
+    Harness,
+    NativeMcpState,
+    _result,
+    _run,
+    file_mcp_servers,
+)
 
 SERVER = {
     "name": "example",
@@ -46,13 +55,13 @@ async def test_unavailable_managed_names_cannot_fall_back_to_native_sources(tmp_
     await f.harness.open()
     await f.harness.create_session()
     unavailable = f.harness.build_options("claude-sonnet-4-6", None)
-    assert "example" not in unavailable["mcp_servers"]
+    assert "example" not in file_mcp_servers(unavailable)
     assert json.loads(unavailable["settings"])["deniedMcpServers"] == [{"serverName": "example"}]
     assert unavailable["setting_sources"] == ["user", "project"]
     assert not unavailable.get("strict_mcp_config")
     await f.harness.prepare_managed_mcp({"example"})
     available = f.harness.build_options("claude-sonnet-4-6", None)
-    assert available["mcp_servers"]["example"]["url"] == SERVER["url"]
+    assert file_mcp_servers(available)["example"]["url"] == SERVER["url"]
     assert "deniedMcpServers" not in json.loads(available["settings"])
     await f.harness.close_managed_mcp()
 
@@ -168,3 +177,18 @@ async def test_denied_managed_names_and_instruction_excludes_share_one_settings_
     settings = json.loads(f.harness.build_options("claude-sonnet-4-6", None)["settings"])
     assert settings["deniedMcpServers"] == [{"serverName": "example"}]
     assert settings["claudeMdExcludes"] == ["/workspace/AGENTS.md"]
+
+
+async def test_mcp_tokens_stay_out_of_the_cli_command(tmp_path):
+    f = Harness(tmp_path, mcp_servers=(SERVER,))
+    await f.harness.open()
+    await f.harness.create_session()
+    await f.harness.prepare_managed_mcp({"example"})
+    options = ClaudeAgentOptions(**f.harness.build_options("claude-sonnet-4-6", None))
+    command = SubprocessCLITransport(prompt="hi", options=options)._build_command()
+    assert not any("Bearer sandbox" in arg for arg in command)
+    config_path = command[command.index("--mcp-config") + 1]
+    with open(config_path) as file:
+        servers = json.load(file)["mcpServers"]
+    assert servers["example"]["headers"] == {"Authorization": "Bearer sandbox"}
+    await f.harness.close_managed_mcp()

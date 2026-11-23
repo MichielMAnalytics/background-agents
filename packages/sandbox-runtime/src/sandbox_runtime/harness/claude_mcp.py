@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from ..managed_mcp import managed_marker, personal_names
@@ -12,6 +13,7 @@ from .claude_env import CLAUDE_POLICY_SETTINGS
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
 
     from claude_agent_sdk import McpStatusResponse
 
@@ -60,6 +62,24 @@ def mcp_server_options(
                 entry["env"] = dict(server["env"])
         config[str(name)] = entry
     return config
+
+
+MCP_CONFIG_FILE: Final = "mcp-servers.json"
+
+
+def write_mcp_config(config_dir: Path, servers: dict[str, Any]) -> Path:
+    """Write the session MCP servers to a file only this user can read.
+
+    Passed inline, their headers and env (bearer tokens) would sit in the CLI's
+    argv, which every process in the sandbox can read with ``ps``.
+    """
+    config_dir.mkdir(parents=True, exist_ok=True)
+    path = config_dir / MCP_CONFIG_FILE
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as file:
+        os.fchmod(file.fileno(), 0o600)
+        json.dump({"mcpServers": servers}, file)
+    return path
 
 
 def mcp_policy_settings(servers: tuple[Mapping[str, Any], ...], allowed_personal: set[str]) -> str:

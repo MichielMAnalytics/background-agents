@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
@@ -102,7 +103,11 @@ class FakeSdkClient:
         self.queries.append(messages)
 
     async def get_mcp_status(self):
-        names = [*self.options.get("mcp_servers", {}), *self.mcp.native]
+        names = [
+            *self.options.get("mcp_servers", {}),
+            *file_mcp_servers(self.options),
+            *self.mcp.native,
+        ]
         return {"mcpServers": [{"name": name, "status": self._mcp_status(name)} for name in names]}
 
     def _mcp_status(self, name: str) -> str:
@@ -209,3 +214,13 @@ async def _run(harness: ClaudeHarness, prompt: HarnessPrompt | None = None):
 
     outcome = await harness.run_prompt(prompt or HarnessPrompt(message_id="m1", text="hi"), emit)
     return events, outcome
+
+
+def file_mcp_servers(options: dict[str, Any]) -> dict[str, Any]:
+    """The session MCP servers the options pass to the CLI through a file."""
+    path = options.get("extra_args", {}).get("mcp-config")
+    if path is None:
+        return {}
+    with open(path) as file:
+        servers: dict[str, Any] = json.load(file)["mcpServers"]
+    return servers
