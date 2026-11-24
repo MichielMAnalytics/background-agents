@@ -40,6 +40,13 @@ Base image definition with:
 - OpenCode CLI
 - agent-browser CLI + headless Chrome
 
+Every image build uses the builder version pinned as `IMAGE_BUILDER_VERSION` in
+`src/images/base.py`, not the Modal environment's default, which Modal can change on its own. The
+`modal` client in `pyproject.toml` must know that version: a test checks it, and Dependabot proposes
+`modal` upgrades as their own pull request. To move to a newer builder, upgrade `modal` first, raise
+the constant, and run the image build on staging before production. Setting
+`MODAL_IMAGE_BUILDER_VERSION` in the environment overrides the pin for a single run.
+
 ### Sandbox (`src/sandbox/`)
 
 - **manager.py**: Sandbox lifecycle (create, restore, snapshot)

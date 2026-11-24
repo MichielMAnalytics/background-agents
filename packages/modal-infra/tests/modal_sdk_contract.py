@@ -1,7 +1,7 @@
 """Serialize recorded SDK arguments using the installed Modal protobuf contracts.
 
 These cover argument serialization, not RPCs, object hydration, or runtime behavior.
-The mappings follow Modal 1.4.3's sandbox.py; resource conversion stays in the SDK.
+The mappings follow the pinned Modal release's sandbox.py; resource conversion stays in the SDK.
 """
 
 from inspect import signature

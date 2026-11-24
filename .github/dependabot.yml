@@ -61,16 +61,6 @@ updates:
     # by upgrading the source uv.lock and running `sandbox:images lock`.
     exclude-paths:
       - "locks/**"
-    ignore:
-      # Newer Modal releases remove the endpoint introspection modal-infra
-      # tests use (Function.get_raw_f, .spec, .get_build_def). Bump it manually.
-      # update-types applies to version updates only, so Modal security
-      # updates still open PRs.
-      - dependency-name: modal
-        update-types:
-          - version-update:semver-major
-          - version-update:semver-minor
-          - version-update:semver-patch
     schedule:
       interval: cron
       cronjob: "0 9 1,15 * *"
@@ -78,9 +68,18 @@ updates:
       default-days: 7
     open-pull-requests-limit: 5
     groups:
+      # Modal gets its own pull request. A release can change SDK internals the
+      # modal-infra tests read (Function._spec_, ._get_build_def), and the client
+      # must know the image builder version modal-infra pins (IMAGE_BUILDER_VERSION
+      # in src/images/base.py), so a bump is reviewed on its own.
+      modal:
+        patterns:
+          - modal
       python-minor-patch:
         patterns:
           - "*"
+        exclude-patterns:
+          - modal
         update-types:
           - minor
           - patch

@@ -19,6 +19,22 @@ IMAGE_ID_ENV = "OPENINSPECT_MODAL_BASE_IMAGE_ID"
 DOCKER_IMAGE_ID_ENV = "OPENINSPECT_MODAL_DOCKER_IMAGE_ID"
 # The Modal option that launches a Docker-capable VM instead of a gVisor sandbox.
 MODAL_VM_EXPERIMENTAL_OPTIONS: dict[str, bool] = {"vm_runtime": True}
+# The image builder version every Modal image build uses, instead of the Modal
+# environment's default, which Modal can change with no change here. The installed
+# `modal` client must know it, so raise it together with the client (a test checks
+# that). MODAL_IMAGE_BUILDER_VERSION in the environment still overrides it.
+IMAGE_BUILDER_VERSION = "2026.10"
+IMAGE_BUILDER_VERSION_ENV = "MODAL_IMAGE_BUILDER_VERSION"
+
+
+def pin_image_builder_version() -> str:
+    """Select the builder version for this process; return the one that will be used."""
+    return os.environ.setdefault(IMAGE_BUILDER_VERSION_ENV, IMAGE_BUILDER_VERSION)
+
+
+# Importing this module is the one step every build path shares: the eager
+# `python deploy.py --build-sandbox-image` and `modal deploy deploy.py`.
+pin_image_builder_version()
 
 
 def local_image_plan() -> tuple[Path, dict[str, Any]]:

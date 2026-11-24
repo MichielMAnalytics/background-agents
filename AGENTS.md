@@ -154,6 +154,10 @@ under 72 characters. Use the PR body for details, not the commit message.
   `uv run modal deploy -m src`). Never deploy `src/app.py` directly; it doesn't import function
   modules.
 - **Modal image rebuild**: update `CACHE_BUSTER` in `src/images/base.py` to force a rebuild.
+- **Modal image builder version**: `IMAGE_BUILDER_VERSION` in `src/images/base.py` pins it for every
+  build, because Modal can change the environment default and the `modal` client rejects versions it
+  does not know. Raise it together with the client (Dependabot opens `modal` upgrades on their own);
+  a test checks that the client knows it.
 - **Web platform choice**: set `web_platform = "cloudflare"` in Terraform variables and
   `WEB_PLATFORM=cloudflare` in the deploy settings to deploy the web app to Cloudflare Workers via
   OpenNext instead of Vercel. When using Cloudflare, Vercel credentials are not required (dummy

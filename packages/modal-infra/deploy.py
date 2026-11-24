@@ -79,6 +79,8 @@ def build_sandbox_image(*, with_docker: bool = False) -> None:
     if base_image_plan is None:
         raise RuntimeError("Modal sandbox image build requires a local packed image plan")
     deployed_app = modal.App.lookup(APP_NAME, create_if_missing=True)
+    builder_version = modal.config.config.get("image_builder_version") or "environment default"
+    print(f"Modal image builder version: {builder_version}", flush=True)
     with modal.enable_output():
         base_image.build(deployed_app)
     from sandbox_images.native import write_build_result

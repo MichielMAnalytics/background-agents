@@ -34,7 +34,7 @@ def _tags(launch="1-111-9000-9001-9002", ports="3000-3001"):
 
 
 async def _call(endpoint, request, authorization="Bearer test"):
-    return await endpoint.get_raw_f()(
+    return await endpoint.local(
         request,
         authorization=authorization,
         x_trace_id=None,
