@@ -294,21 +294,24 @@ Classification and pickers use live channel- and actor-scoped catalogs. A bound 
 
 ### Routing rules
 
-Map keywords to repositories or environments under **Routing rules** so common requests route without guessing. With `frontend → acme/web-app` and `api → acme/backend`:
+Map keywords to repositories, environments, or **No repository** under **Routing rules** so common requests route without guessing. Choose **No repository** for tasks that do not need a codebase. These sessions start an empty sandbox without cloning a repository.
+
+With `frontend → acme/web-app`, `api → acme/backend`, and `notes → No repository`:
 
 ```text
 @OpenInspect fix the frontend nav bug        (routes to acme/web-app)
 @OpenInspect add the new api endpoint         (routes to acme/backend)
+@OpenInspect summarize these notes            (starts a No repository session)
 ```
 
-| Rule                           | Behavior                                                                         |
-| ------------------------------ | -------------------------------------------------------------------------------- |
-| Whole words, case-insensitive  | `api` matches "the api is down" but not "rapidly"                                |
-| Channels and DMs               | Rules apply everywhere, which helps in DMs where there is no channel association |
-| Rules beat channel association | An explicit keyword wins over the channel's default repository                   |
-| Ambiguity asks, never guesses  | Two keywords for two repositories open the picker seeded with those candidates   |
-| Stale targets are ignored      | A rule whose repository is no longer accessible becomes inert                    |
-| Active threads are not moved   | A keyword in a thread reply does not change that session's repository            |
+| Rule                           | Behavior                                                                          |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| Whole words, case-insensitive  | `api` matches "the api is down" but not "rapidly"                                 |
+| Channels and DMs               | Rules apply everywhere, which helps in DMs where there is no channel association  |
+| Rules beat channel association | An explicit keyword wins over the channel's default repository                    |
+| Ambiguity asks, never guesses  | Matching rules for different targets open the picker seeded with those candidates |
+| Stale targets are ignored      | A rule whose repository is no longer accessible becomes inert                     |
+| Active threads are not moved   | A keyword in a thread reply does not change that session's repository             |
 
 ### Session instructions
 

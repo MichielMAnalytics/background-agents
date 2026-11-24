@@ -10,7 +10,6 @@ import type { Env } from "../types";
 import { normalizeRepoId } from "../utils/repo";
 import {
   normalizeRoutingRules,
-  slackIntegrationSettingsRoutingResponseSchema,
   slackRoutingRuleSchema,
   type SlackRoutingRule,
 } from "@open-inspect/shared/types/integrations";
@@ -227,8 +226,26 @@ async function getFromCacheOrFallback(env: Env, cacheKey: string): Promise<RepoC
   return FALLBACK_REPOS;
 }
 
+// Validate the response shape without rejecting unknown rule types.
+const routingRulesResponseSchema = z.object({
+  settings: z
+    .object({
+      defaults: z.object({ routingRules: z.array(z.unknown()).optional() }).optional(),
+    })
+    .nullish(),
+});
+
+function parseRoutingRules(value: unknown): SlackRoutingRule[] | null {
+  if (!Array.isArray(value)) return null;
+  const rules = value.flatMap((entry) => {
+    const parsed = slackRoutingRuleSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
+  return normalizeRoutingRules(rules);
+}
+
 /**
- * Workspace-wide Slack routing rules (keyword → repository or environment)
+ * Workspace-wide Slack routing rules (keyword → repository, environment, or no repository)
  * from the control plane's GET /integration-settings/slack endpoint. Fails
  * open to an empty list — no rules means no deterministic routing, the safe
  * default. Normalizes on every path (fresh and KV-fallback) so callers see
@@ -239,19 +256,12 @@ const routingRules = createCachedResource<SlackRoutingRule[]>({
   kvKey: "slack:routing-rules",
   load: async (env, traceId) => {
     const body = await fetchControlPlaneJson(env, "/integration-settings/slack", traceId);
-    const parsed = slackIntegrationSettingsRoutingResponseSchema.safeParse(body);
-    return normalizeRoutingRules(
-      parsed.success ? parsed.data.settings?.defaults?.routingRules : []
-    );
+    const parsed = routingRulesResponseSchema.safeParse(body);
+    return parsed.success
+      ? (parseRoutingRules(parsed.data.settings?.defaults?.routingRules) ?? [])
+      : [];
   },
-  deserialize: (cached) => {
-    if (!Array.isArray(cached)) return null;
-    const rules = cached.flatMap((entry) => {
-      const parsed = slackRoutingRuleSchema.safeParse(entry);
-      return parsed.success ? [parsed.data] : [];
-    });
-    return normalizeRoutingRules(rules);
-  },
+  deserialize: parseRoutingRules,
   fallback: [],
 });
 

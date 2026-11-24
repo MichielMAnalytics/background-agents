@@ -60,6 +60,36 @@ describe("getRoutingRules", () => {
     expect(await getRoutingRules(env)).toEqual([{ keyword: "frontend", target: "acme/web" }]);
   });
 
+  it("keeps valid rules when the response includes unknown or malformed rules", async () => {
+    const env = makeEnv(
+      jsonResponse({
+        settings: {
+          defaults: {
+            routingRules: [
+              { keyword: " FrontEnd ", target: "Acme/Web" },
+              { keyword: "future", target: "future_123", targetType: "future" },
+              { keyword: "broken" },
+              null,
+              { keyword: "dev", target: "env_123", targetType: "environment" },
+              { keyword: "notes", target: "none", targetType: "none" },
+            ],
+          },
+        },
+      })
+    );
+
+    expect(await getRoutingRules(env)).toEqual([
+      { keyword: "frontend", target: "acme/web" },
+      { keyword: "dev", target: "env_123", targetType: "environment" },
+      { keyword: "notes", target: "none", targetType: "none" },
+    ]);
+  });
+
+  it.each([null, {}, "invalid"])("fails open when routingRules is %j", async (rules) => {
+    const env = makeEnv(jsonResponse({ settings: { defaults: { routingRules: rules } } }));
+    expect(await getRoutingRules(env)).toEqual([]);
+  });
+
   it("fails open when routing rules have a malformed shape", async () => {
     const env = makeEnv(
       jsonResponse({

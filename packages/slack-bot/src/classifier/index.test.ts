@@ -322,6 +322,33 @@ describe("RepoClassifier", () => {
   });
 
   describe("routing rules", () => {
+    it("routes to No repository before channel association or the LLM", async () => {
+      mockGetRoutingRules.mockResolvedValue([
+        { keyword: "notion", target: "none", targetType: "none" },
+      ]);
+      const result = await createClassifier(TEST_ENV).classify("notion task", {
+        teamId: "team-a",
+        channelId: "C1",
+        userId: "U123",
+      });
+      expect(result.target).toEqual({ kind: "none" });
+      expect(result.needsClarification).toBe(false);
+      expect(mockMessagesCreate).not.toHaveBeenCalled();
+    });
+
+    it("asks when rules match both No repository and a repository", async () => {
+      mockGetRoutingRules.mockResolvedValue([
+        { keyword: "notion", target: "none", targetType: "none" },
+        { keyword: "frontend", target: "acme/web" },
+      ]);
+      const result = await createClassifier(TEST_ENV).classify("notion frontend");
+      expect(result.target).toBeNull();
+      expect(result.needsClarification).toBe(true);
+      expect(result.alternatives).toEqual(
+        expect.arrayContaining([{ kind: "none" }, expect.objectContaining({ kind: "repository" })])
+      );
+      expect(mockMessagesCreate).not.toHaveBeenCalled();
+    });
     it("routes deterministically when a keyword matches, without calling the LLM", async () => {
       mockGetAvailableRepos.mockResolvedValue([TEST_REPOS[1]]);
       mockGetRoutingRules.mockResolvedValue([

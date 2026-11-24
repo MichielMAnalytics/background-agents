@@ -37,7 +37,9 @@ export async function resolveRoutingRuleTargets(
   const targets = new Map<string, ResolvedRoutingRuleTarget>();
   for (const rule of matched) {
     let target: SlackSessionTarget | null = null;
-    if (rule.targetType === "environment") {
+    if (rule.targetType === "none") {
+      target = { kind: "none" };
+    } else if (rule.targetType === "environment") {
       const environment = catalog.environments.find((e) => e.id === rule.target);
       if (environment) target = { kind: "environment", environment };
     } else {

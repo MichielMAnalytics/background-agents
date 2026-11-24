@@ -1666,6 +1666,26 @@ describe("IntegrationSettingsStore", () => {
       ).rejects.toThrow(IntegrationSettingsValidationError);
     });
 
+    it("round-trips a routing rule without a repository", async () => {
+      await store.setGlobal("slack", {
+        defaults: { routingRules: [{ keyword: "Notion", target: "none", targetType: "none" }] },
+      });
+      const result = await store.getGlobal("slack");
+      expect(result?.defaults?.routingRules).toEqual([
+        { keyword: "notion", target: "none", targetType: "none" },
+      ]);
+    });
+
+    it("rejects repository targets with the no-repository type", async () => {
+      await expect(
+        store.setGlobal("slack", {
+          defaults: {
+            routingRules: [{ keyword: "notion", target: "acme/web", targetType: "none" }],
+          },
+        })
+      ).rejects.toThrow("routing rule target must be none");
+    });
+
     it("round-trips an environment-targeted routing rule", async () => {
       await store.setGlobal("slack", {
         defaults: {

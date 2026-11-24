@@ -666,6 +666,27 @@ describe("SlackIntegrationSettings", () => {
       expect(within(section).getByText("acme/web")).toBeInTheDocument();
     });
 
+    it("saves and reloads a rule with No repository", async () => {
+      const user = userEvent.setup();
+      setupSWR({
+        global: {
+          defaults: { routingRules: [{ keyword: "notion", target: "none", targetType: "none" }] },
+        },
+        availableRepos: [],
+      });
+      fetchMock.mockResolvedValue(okJson({}));
+      render(<SlackIntegrationSettings />);
+      const section = routingSection();
+      expect(within(section).getByText("No repository")).toBeInTheDocument();
+      await user.clear(within(section).getByRole("textbox", { name: /keyword/i }));
+      await user.type(within(section).getByRole("textbox", { name: /keyword/i }), "tasks");
+      await user.click(within(section).getByRole("button", { name: /save routing rules/i }));
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+      expect(body.settings.defaults.routingRules).toEqual([
+        { keyword: "tasks", target: "none", targetType: "none" },
+      ]);
+    });
+
     it("adds a routing rule and saves it merged into the defaults", async () => {
       const user = userEvent.setup();
       setupSWR({

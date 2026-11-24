@@ -193,9 +193,11 @@ send the request again and name the repository, environment, or that no reposito
 
 ### Routing rules
 
-Administrators can map keywords to repositories so common requests route instantly, without
-Open-Inspect having to guess. Configure them in the web app under **Settings → Integrations → Slack
-→ Routing rules**: each rule pairs a keyword with a target repository.
+Administrators can map keywords to repositories, environments, or **No repository** so common
+requests route instantly. Configure them under **Settings → Integrations → Slack → Routing rules**.
+Each rule pairs a keyword with a target. **No repository** starts an empty sandbox without cloning
+code. Use this target for tasks that do not need repository context. MCP servers for these sessions
+must be available to sessions without a repository.
 
 For example, with `frontend → acme/web-app` and `api → acme/backend`:
 
@@ -209,8 +211,8 @@ How matching works:
   there is no channel association.
 - **Rules beat channel association.** An explicit keyword always wins over the channel's default
   repository.
-- **Ambiguity asks, never guesses.** If one message matches keywords for two different repositories,
-  Open-Inspect shows the repository picker seeded with those candidates.
+- **Ambiguity asks, never guesses.** If a message matches rules for different targets, including
+  **No repository**, Open-Inspect shows the target picker with those candidates.
 - **Stale targets are ignored.** A rule whose repository is later removed from the deployment
   becomes inert until access is restored, rather than routing somewhere unexpected.
 

@@ -729,7 +729,13 @@ export class IntegrationSettingsStore {
           `routing rule keyword must be ${MAX_SLACK_ROUTING_KEYWORD_LENGTH} characters or fewer`
         );
       }
-      if (targetType === "environment") {
+      if (targetType === "none") {
+        if (target.trim() !== "none") {
+          throw new IntegrationSettingsValidationError(
+            "routing rule target must be none when targetType is none"
+          );
+        }
+      } else if (targetType === "environment") {
         // The stable environment id, never the rename-able display name.
         if (!isEnvironmentId(target.trim())) {
           throw new IntegrationSettingsValidationError(

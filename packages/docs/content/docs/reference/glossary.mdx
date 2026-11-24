@@ -80,7 +80,7 @@ A connected OpenAI, xAI (SuperGrok), or Claude subscription stored installation-
 A per-session or per-message setting that selects how much reasoning a model applies. Each model lists the efforts it supports and a default. See [Choosing a model](/models/choosing-a-model).
 
 **Routing rule (Slack)**
-A keyword-to-repository mapping under Settings › Integrations › Slack › Routing rules. A whole-word, case-insensitive match routes a Slack request straight to that repository, ahead of the channel's default. See [Slack](/integrations/slack).
+A keyword-to-target mapping under Settings › Integrations › Slack › Routing rules. The target can be a repository, an environment, or **No repository**. A whole-word, case-insensitive match routes a Slack request straight to that target, ahead of the channel's default. See [Slack](/integrations/slack).
 
 **Run (automation)**
 One session started by an automation firing. A multi-repository firing has one run per repository, and the firing row summarises them with statuses such as Completed, Failed, or Partial failure. See [Automations](/automations).

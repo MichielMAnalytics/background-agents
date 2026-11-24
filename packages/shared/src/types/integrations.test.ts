@@ -450,6 +450,19 @@ describe("normalizeRoutingRules", () => {
     ]);
   });
 
+  it("normalizes and deduplicates No repository rules without losing conflicts", () => {
+    expect(
+      normalizeRoutingRules([
+        { keyword: " Notion ", target: "none", targetType: "none" },
+        { keyword: "NOTION", target: "none", targetType: "none" },
+        { keyword: "notion", target: "acme/web" },
+      ])
+    ).toEqual([
+      { keyword: "notion", target: "none", targetType: "none" },
+      { keyword: "notion", target: "acme/web" },
+    ]);
+  });
+
   it("de-dupes identical environment rules", () => {
     expect(
       normalizeRoutingRules([

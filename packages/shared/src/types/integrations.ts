@@ -475,15 +475,15 @@ export const slackUnboundChannelsSchema = z.enum(["workspace", "reject"]);
 export type SlackUnboundChannels = z.infer<typeof slackUnboundChannelsSchema>;
 export const DEFAULT_SLACK_UNBOUND_CHANNELS: SlackUnboundChannels = "workspace";
 
-/** What a Slack routing rule points at: a repository or a saved environment. */
-export type SlackRoutingTargetType = "repository" | "environment";
+/** The target of a Slack routing rule, including sessions without a repository. */
+export type SlackRoutingTargetType = "repository" | "environment" | "none";
 
-export const slackRoutingTargetTypeSchema = z.enum(["repository", "environment"]);
+export const slackRoutingTargetTypeSchema = z.enum(["repository", "environment", "none"]);
 
 /**
  * A workspace-wide keyword→target routing rule for Slack. When a Slack
  * message contains the keyword, the bot routes the agent to the target
- * repository or environment deterministically, before falling back to LLM
+ * repository, environment, or empty sandbox before falling back to LLM
  * classification.
  */
 export const slackRoutingRuleSchema = z.object({
@@ -492,7 +492,7 @@ export const slackRoutingRuleSchema = z.object({
   /**
    * Canonical "owner/name" (lowercase) of the target repository, or — when
    * `targetType` is `"environment"` — the stable environment id (`env_…`),
-   * never the rename-able display name.
+   * never the rename-able display name. For `targetType: "none"`, use "none".
    */
   target: z.string(),
   /** Absent means "repository" (every rule stored before environments existed). */
@@ -539,7 +539,7 @@ export const slackGlobalSettingsSchema = slackRepoSettingsSchema.extend({
   mentionsPolicy: z.enum(["allow", "escape", "strip"]).optional(),
   /** Ownership policy for Slack channels without a Team binding (global-only). */
   unboundChannels: slackUnboundChannelsSchema.optional(),
-  /** Workspace-wide keyword→repository routing rules (global-only, like mentionsPolicy). */
+  /** Workspace-wide keyword-to-target routing rules (global-only, like mentionsPolicy). */
   routingRules: z.array(slackRoutingRuleSchema.strict()).optional(),
   /** Custom instructions appended to the first prompt of every Slack-initiated session. */
   sessionInstructions: z.string().optional(),
@@ -569,13 +569,18 @@ export function normalizeRoutingRules(rules: SlackRoutingRule[] | undefined): Sl
     const keyword = typeof rule?.keyword === "string" ? rule.keyword.trim().toLowerCase() : "";
     const rawTarget = typeof rule?.target === "string" ? rule.target.trim() : "";
     const isEnvironment = rule?.targetType === "environment";
-    const target = isEnvironment ? rawTarget : rawTarget.toLowerCase();
+    const isNone = rule?.targetType === "none";
+    const target = isNone ? "none" : isEnvironment ? rawTarget : rawTarget.toLowerCase();
     if (!keyword || !target) continue;
-    const dedupeKey = `${keyword} ${isEnvironment ? "environment" : "repository"} ${target}`;
+    const dedupeKey = `${keyword} ${isNone ? "none" : isEnvironment ? "environment" : "repository"} ${target}`;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
     normalized.push(
-      isEnvironment ? { keyword, target, targetType: "environment" } : { keyword, target }
+      isNone
+        ? { keyword, target, targetType: "none" }
+        : isEnvironment
+          ? { keyword, target, targetType: "environment" }
+          : { keyword, target }
     );
     if (normalized.length >= MAX_SLACK_ROUTING_RULES) break;
   }
