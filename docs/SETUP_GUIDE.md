@@ -97,8 +97,8 @@ NEXT_PUBLIC_APP_ICON_URL=
 Do not commit `packages/web/.env.local`.
 
 OAuth provider credentials are not web environment variables. Better Auth runs in the control plane,
-so configure at least one complete pair: `github_client_id` plus `github_client_secret`,
-`google_client_id` plus `google_client_secret`, or both. See
+so configure at least one complete pair: `GH_OAUTH_CLIENT_ID` plus `GH_OAUTH_CLIENT_SECRET`,
+`GOOGLE_CLIENT_ID` plus `GOOGLE_CLIENT_SECRET`, or both. See
 [Create GitHub App](GETTING_STARTED.md#step-3-create-github-app) and
 [Enable Google Login](GETTING_STARTED.md#enable-google-login-optional) for the complete provider
 setup. The `/login` page reads the enabled provider set from the control plane at request time.
@@ -192,8 +192,8 @@ pytest tests/ -v
 
 ## Path C: Full Self-Hosted Deployment
 
-Follow the full deployment guide and generate `token_encryption_key` and
-`repo_secrets_encryption_key`. Terraform generates and persists the independent provider-account
+Follow the full deployment guide and generate `TOKEN_ENCRYPTION_KEY` and
+`REPO_SECRETS_ENCRYPTION_KEY`. Terraform generates and persists the independent provider-account
 credential key unless an existing `provider_accounts_encryption_key` override is supplied. After
 deployment, connect subscriptions in **Settings > Provider Accounts**, configure defaults and
 unattended modes, and rebuild every runtime image. Legacy scoped OAuth can coexist with provider
@@ -209,13 +209,14 @@ Critical notes before deploy:
   [create the first team](GETTING_STARTED.md#step-10-create-the-first-team-and-test-a-session). The
   creator becomes Lead; choose membership policy and default visibility, grant repositories,
   join/add operators, and create a team-owned test session.
-- Fresh deployments should explicitly set `teams_enforcement = "on"` in Terraform to deploy
-  `TEAMS_ENFORCEMENT=on`. Runtime and Terraform defaults remain `shadow`. Existing deployments must
-  review production `shadow_denied:*` authorization audit entries before opting in; no completed
-  default-flip audit gate is established by this guide.
-- Build workers before running Terraform apply.
+- Fresh deployments should explicitly set `TEAMS_ENFORCEMENT=on` in the deploy settings
+  (`deploy.env` or the GitHub Environment). Runtime and deploy defaults remain `shadow`. Existing
+  deployments must review production `shadow_denied:*` authorization audit entries before opting in;
+  no completed default-flip audit gate is established by this guide.
+- The Cloudflare deploy builds the Workers; Terraform builds none.
 - Build `@open-inspect/shared` first.
-- Use two-phase Terraform deploy for DO/service bindings.
+- On a first Cloudflare deploy, set `ENABLE_SERVICE_BINDINGS=false`, then `true` (Durable Object
+  migrations need no extra step).
 - For Modal deployments, eagerly build the Sandbox image with
   `uv run python deploy.py --build-sandbox-image`, then deploy with `uv run modal deploy deploy.py`
   (not `src/app.py`).
@@ -233,11 +234,11 @@ Your GitHub callback URL does not exactly match the running app URL.
 
 ### Access denied after sign-in
 
-Check `allowed_users`, `allowed_email_domains`, `allowed_emails`, and `allowed_github_orgs` in the
-control plane's Terraform configuration. If `allowed_github_orgs` is set, make sure your GitHub App
-has Organization permissions: Members read-only and that the updated permission was republished and
-approved for the installation. Owners and Administrators can also add the person under **Settings >
-Workspace access > Who can sign in**; those rules add to the Terraform lists.
+Check `ALLOWED_USERS`, `ALLOWED_EMAIL_DOMAINS`, `ALLOWED_EMAILS`, and `ALLOWED_GITHUB_ORGS` in the
+deploy settings (`deploy.env` or the GitHub Environment). If `ALLOWED_GITHUB_ORGS` is set, make sure
+your GitHub App has Organization permissions: Members read-only and that the updated permission was
+republished and approved for the installation. Owners and Administrators can also add the person
+under **Settings > Workspace access > Who can sign in**; those rules add to the Terraform lists.
 
 ### Web can load, but session APIs return 401
 

@@ -1,9 +1,9 @@
 /**
  * The control plane's scheduled jobs: one table that both clocks drive.
  * Cloudflare fires `scheduled()` in `src/index.ts` from the cron triggers
- * Terraform declares (`cron_triggers` in
- * `terraform/environments/production/workers-control-plane.tf`), which must
- * list exactly the expressions below; a unit test checks the two agree. The
+ * the Cloudflare deploy declares (`CONTROL_PLANE_CRONS` in
+ * `scripts/cloudflare-deploy/config.mjs`), which must list exactly the
+ * expressions below; a unit test checks the two agree. The
  * Node host drives the same table from an in-process loop over
  * `nextCronOccurrence` from `@open-inspect/shared` (src/node/cron-loop.ts).
  *

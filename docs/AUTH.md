@@ -78,10 +78,10 @@ outcomes require an explicit reload and draft review, not automatic retry. Disca
 unload warns about unsaved changes, but arbitrary in-app navigation is not blocked.
 
 The deployment must still have a compatible baseline for every enabled provider; managed rules do
-not satisfy Terraform's safety gates or rescue invalid runtime configuration. Keep an exact verified
-recovery administrator email in `allowed_emails` / `ALLOWED_EMAILS`, with unsafe mode disabled.
-Google requires email/domain rules; GitHub also supports username/organization rules. An empty
-deployment baseline managed entirely through the UI is not supported.
+not satisfy the deploy's safety checks or rescue invalid runtime configuration. Keep an exact
+verified recovery administrator email in `ALLOWED_EMAILS`, with unsafe mode disabled. Google
+requires email/domain rules; GitHub also supports username/organization rules. An empty deployment
+baseline managed entirely through the UI is not supported.
 
 `UNSAFE_ALLOW_ALL_USERS=true` only allows any otherwise valid identity when **all effective lists
 are empty**. Nonempty managed or deployment rules keep it dormant. Whenever the flag is true, the
@@ -362,10 +362,10 @@ private sessions.
 
 Operators set `TEAMS_ENFORCEMENT` to `off`, `shadow` (the default), or `on`. `off` keeps legacy read
 access to non-private sessions and legacy actions on non-private workspace-owned sessions; `shadow`
-does the same while auditing would-be denials; `on` enforces team visibility and action rules.
-Terraform exposes this as `teams_enforcement`, resolved in CI from the repository variable, then the
-same-named secret, then `shadow`. The AWS configuration sets `shadow` in its `config` map; change
-`TEAMS_ENFORCEMENT` there instead. Deploying Teams alone does not enable `on`.
+does the same while auditing would-be denials; `on` enforces team visibility and action rules. The
+Cloudflare deploy binds this from the `TEAMS_ENFORCEMENT` setting, resolved in CI from the variable,
+then the same-named secret, then `shadow`. The AWS configuration sets `shadow` in its `config` map;
+change `TEAMS_ENFORCEMENT` there instead. Deploying Teams alone does not enable `on`.
 
 No mode relaxes private-session access, current membership for team-owned actions, checks on
 visibility and collaborator changes, or environment, automation, repository-grant, and team-secret

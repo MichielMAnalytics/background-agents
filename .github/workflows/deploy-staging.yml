@@ -1,0 +1,306 @@
+name: Deploy Staging
+
+# Deploys a pull request to the staging Cloudflare environment: Terraform
+# (terraform/environments/staging), then the Worker deploy. Production still
+# deploys from main (terraform-production.yml, deploy-production.yml), so a
+# change can be tried on staging first.
+#
+# It can also be run by hand (Actions -> Deploy Staging -> Run workflow, branch
+# main), which deploys main: the first bring-up of a new staging environment, or
+# putting staging back on main after a pull request. A manual run from any other
+# branch is skipped, so the workflow that holds the secrets always comes from
+# main. It waits for the same Environment approval.
+#
+# Approval is the `staging` GitHub Environment's: add required reviewers to it
+# (Settings -> Environments -> staging) and every run waits there, with no secret
+# released, until one approves. Enable "Prevent self-review" to make the person
+# who pushed ask someone else. The Environment also lists each run as a
+# deployment on the pull request.
+#
+# Opt-in: set the repository variable CLOUDFLARE_STAGING_ENABLED=true and
+# configure the "staging" Environment. Anything that Environment does not set
+# falls back to the repository-level value, which is production's: set at
+# least DEPLOYMENT_NAME, and a MODAL_ENVIRONMENT of its own, on it. See
+# terraform/README.md#staging.
+#
+# Pull requests from forks run too (pull_request_target: a plain pull_request
+# run from a fork gets no secrets, even after approval), so enabling staging
+# enables it for every fork. Drafts wait until they are marked ready.
+#
+# THE APPROVAL IS THE ONLY GATE. Once a reviewer approves, the pull request's
+# code runs with the staging Environment's secrets: its Terraform files and
+# external data sources, deploy scripts, package.json and lockfile (npm
+# lifecycle scripts), and the Modal deploy. Required reviewers must therefore
+# be configured on the Environment, and approving means having read the whole
+# diff, dependency changes included. Without reviewers this workflow runs any
+# fork's code with those secrets as soon as a pull request opens.
+#
+# The workflow file itself comes from main, not from the pull request, so a
+# pull request cannot edit it to skip the Environment; a change to this file
+# takes effect only after it merges. The commit deployed is the pull request's
+# head (what the reviewer read, pinned at the time of the event), not its merge
+# with main. Repository-level secrets are not released to the checked-out code
+# before approval, but credentials that staging inherits from them are
+# readable after it: give the staging Environment its own Cloudflare and Modal
+# credentials where possible.
+#
+# The Terraform and deploy settings below are held identical to
+# terraform-cloudflare.yml and deploy-cloudflare.yml by
+# scripts/terraform-workflow-contract.test.mjs, and the paths to STAGING_PATHS
+# in scripts/cloudflare-deploy/changes.mjs.
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "terraform/**"
+      - "!terraform/d1/**"
+      - "packages/boat-infra/**"
+      - "packages/daytona-infra/**"
+      - "packages/e2b-infra/**"
+      - "packages/modal-infra/**"
+      - "packages/sandbox-images/**"
+      - "packages/sandbox-runtime/**"
+      - "packages/vercel-infra/**"
+      - "package-lock.json"
+      - "packages/control-plane/scripts/build-vercel-base-snapshot.ts"
+      - "packages/control-plane/src/**"
+      - "packages/shared/package.json"
+      - "packages/shared/src/**"
+      - "packages/shared/tsconfig.json"
+      - ".nvmrc"
+      - "package.json"
+      - "packages/control-plane/**"
+      - "packages/github-bot/**"
+      - "packages/linear-bot/**"
+      - "packages/shared/**"
+      - "packages/slack-bot/**"
+      - "packages/web/**"
+      - "scripts/cloudflare-deploy/**"
+      - "scripts/d1-migrate.sh"
+      - "terraform/d1/migrations/**"
+      - ".github/workflows/deploy-staging.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false # Don't interrupt a Terraform apply
+
+jobs:
+  staging:
+    name: Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    if: >-
+      vars.CLOUDFLARE_STAGING_ENABLED == 'true' &&
+      !github.event.pull_request.draft &&
+      (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
+    environment: staging
+    steps:
+      # The head commit the event named, from the fork if need be (main's tip for
+      # a manual run). This is the code the reviewer approved; a later push is a
+      # new run and a new approval.
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      # No caches: a pull_request_target run saves them under main's scope, so
+      # code from a fork could plant a cache that production's workflows restore.
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+
+      - name: Install Modal and Python dependencies
+        run: uv sync --frozen
+        working-directory: packages/modal-infra
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.14.8"
+
+      - name: Terraform Init
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          terraform init \
+            -backend-config="access_key=${{ secrets.R2_ACCESS_KEY_ID }}" \
+            -backend-config="secret_key=${{ secrets.R2_SECRET_ACCESS_KEY }}" \
+            -backend-config="endpoints={s3=\"https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com\"}"
+        working-directory: terraform/environments/staging
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        working-directory: terraform/environments/staging
+        env:
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_account_id: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TF_VAR_cloudflare_worker_subdomain: ${{ vars.CLOUDFLARE_WORKER_SUBDOMAIN || secrets.CLOUDFLARE_WORKER_SUBDOMAIN }}
+          TF_VAR_r2_media_location: "${{ vars.R2_MEDIA_LOCATION || secrets.R2_MEDIA_LOCATION || 'ENAM' }}"
+          TF_VAR_r2_media_bucket_name: ${{ vars.R2_MEDIA_BUCKET_NAME || secrets.R2_MEDIA_BUCKET_NAME }}
+          TF_VAR_vercel_api_token: "${{ secrets.VERCEL_API_TOKEN || '000000000000000000000000' }}"
+          TF_VAR_vercel_team_id: "${{ vars.VERCEL_TEAM_ID || secrets.VERCEL_TEAM_ID || 'unused' }}"
+          TF_VAR_modal_token_id: ${{ secrets.MODAL_TOKEN_ID }}
+          TF_VAR_modal_token_secret: ${{ secrets.MODAL_TOKEN_SECRET }}
+          TF_VAR_modal_workspace: ${{ vars.MODAL_WORKSPACE || secrets.MODAL_WORKSPACE }}
+          TF_VAR_modal_environment: "${{ vars.MODAL_ENVIRONMENT || secrets.MODAL_ENVIRONMENT || 'main' }}"
+          TF_VAR_modal_environment_web_suffix: ${{ vars.MODAL_ENVIRONMENT_WEB_SUFFIX || secrets.MODAL_ENVIRONMENT_WEB_SUFFIX }}
+          TF_VAR_modal_api_secret: ${{ secrets.MODAL_API_SECRET }}
+          TF_VAR_enable_slack_bot: "${{ vars.ENABLE_SLACK_BOT || secrets.ENABLE_SLACK_BOT || 'true' }}"
+          TF_VAR_enable_github_bot: "${{ vars.ENABLE_GITHUB_BOT || secrets.ENABLE_GITHUB_BOT || 'false' }}"
+          TF_VAR_enable_linear_bot: "${{ vars.ENABLE_LINEAR_BOT || secrets.ENABLE_LINEAR_BOT || 'false' }}"
+          TF_VAR_anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          TF_VAR_provider_accounts_encryption_key: ${{ secrets.PROVIDER_ACCOUNTS_ENCRYPTION_KEY }}
+          TF_VAR_deployment_name: ${{ vars.DEPLOYMENT_NAME || secrets.DEPLOYMENT_NAME }}
+          TF_VAR_app_name: "${{ vars.APP_NAME || secrets.APP_NAME || 'Open-Inspect' }}"
+          TF_VAR_app_icon_url: ${{ vars.APP_ICON_URL || secrets.APP_ICON_URL }}
+          TF_VAR_web_platform: "${{ vars.WEB_PLATFORM || secrets.WEB_PLATFORM || 'vercel' }}"
+          TF_VAR_web_serverless_region: "${{ vars.WEB_SERVERLESS_REGION || 'iad1' }}"
+          TF_VAR_sandbox_provider: "${{ vars.SANDBOX_PROVIDER || secrets.SANDBOX_PROVIDER || 'modal' }}"
+          TF_VAR_daytona_api_url: ${{ vars.DAYTONA_API_URL || secrets.DAYTONA_API_URL }}
+          TF_VAR_daytona_api_key: ${{ secrets.DAYTONA_API_KEY }}
+          TF_VAR_daytona_base_snapshot: ${{ vars.DAYTONA_BASE_SNAPSHOT || secrets.DAYTONA_BASE_SNAPSHOT }}
+          TF_VAR_daytona_base_snapshot_memory_gib: "${{ vars.DAYTONA_BASE_SNAPSHOT_MEMORY_GIB || '2' }}"
+          TF_VAR_daytona_target: ${{ vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET }}
+          TF_VAR_vercel_sandbox_token: ${{ secrets.VERCEL_SANDBOX_TOKEN }}
+          TF_VAR_vercel_sandbox_project_id: ${{ vars.VERCEL_SANDBOX_PROJECT_ID || secrets.VERCEL_SANDBOX_PROJECT_ID }}
+          TF_VAR_vercel_sandbox_team_id: ${{ vars.VERCEL_SANDBOX_TEAM_ID || secrets.VERCEL_SANDBOX_TEAM_ID }}
+          TF_VAR_vercel_sandbox_api_base_url: ${{ vars.VERCEL_SANDBOX_API_BASE_URL || secrets.VERCEL_SANDBOX_API_BASE_URL }}
+          TF_VAR_vercel_base_snapshot_id: ${{ vars.VERCEL_BASE_SNAPSHOT_ID || secrets.VERCEL_BASE_SNAPSHOT_ID }}
+          TF_VAR_vercel_sandbox_runtime: "${{ vars.VERCEL_SANDBOX_RUNTIME || secrets.VERCEL_SANDBOX_RUNTIME || 'node24' }}"
+          TF_VAR_e2b_api_key: ${{ secrets.E2B_API_KEY }}
+          TF_VAR_e2b_template_id: ${{ vars.E2B_TEMPLATE_ID || secrets.E2B_TEMPLATE_ID }}
+          TF_VAR_e2b_api_url: "${{ vars.E2B_API_URL || secrets.E2B_API_URL || 'https://api.e2b.app' }}"
+          TF_VAR_e2b_template_cpu: "${{ vars.E2B_TEMPLATE_CPU || secrets.E2B_TEMPLATE_CPU || '2' }}"
+          TF_VAR_e2b_template_memory_mb: "${{ vars.E2B_TEMPLATE_MEMORY_MB || secrets.E2B_TEMPLATE_MEMORY_MB || '4096' }}"
+          TF_VAR_boat_api_key: ${{ secrets.BOAT_API_KEY }}
+          TF_VAR_boat_api_url: "${{ vars.BOAT_API_URL || secrets.BOAT_API_URL || 'https://boat.dev/api/v1' }}"
+          TF_VAR_boat_base_snapshot: ${{ vars.BOAT_BASE_SNAPSHOT || secrets.BOAT_BASE_SNAPSHOT }}
+          TF_VAR_boat_org: ${{ vars.BOAT_ORG || secrets.BOAT_ORG }}
+          # Documentation site (packages/docs). Leaving DOCS_SITE_ENABLED unset
+          # after provisioning the site destroys its Vercel project on apply.
+          TF_VAR_docs_site_enabled: "${{ vars.DOCS_SITE_ENABLED || secrets.DOCS_SITE_ENABLED || 'false' }}"
+          TF_VAR_docs_custom_domain: ${{ vars.DOCS_CUSTOM_DOMAIN || secrets.DOCS_CUSTOM_DOMAIN }}
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+
+      - name: Deploy Workers
+        run: node scripts/cloudflare-deploy/deploy.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME || secrets.DEPLOYMENT_NAME }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_WORKER_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKER_SUBDOMAIN || secrets.CLOUDFLARE_WORKER_SUBDOMAIN }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID || secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_CUSTOM_DOMAIN: ${{ vars.CLOUDFLARE_CUSTOM_DOMAIN || secrets.CLOUDFLARE_CUSTOM_DOMAIN }}
+          R2_MEDIA_BUCKET_NAME: ${{ vars.R2_MEDIA_BUCKET_NAME || secrets.R2_MEDIA_BUCKET_NAME }}
+          WEB_PLATFORM: ${{ vars.WEB_PLATFORM || secrets.WEB_PLATFORM }}
+          SANDBOX_PROVIDER: ${{ vars.SANDBOX_PROVIDER || secrets.SANDBOX_PROVIDER }}
+          APP_NAME: ${{ vars.APP_NAME || secrets.APP_NAME }}
+          APP_ICON_URL: ${{ vars.APP_ICON_URL || secrets.APP_ICON_URL }}
+          GH_OAUTH_CLIENT_ID: ${{ vars.GH_OAUTH_CLIENT_ID || secrets.GH_OAUTH_CLIENT_ID }}
+          GH_OAUTH_CLIENT_SECRET: ${{ secrets.GH_OAUTH_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID || secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GH_APP_ID: ${{ vars.GH_APP_ID || secrets.GH_APP_ID }}
+          GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          GH_APP_INSTALLATION_ID: ${{ vars.GH_APP_INSTALLATION_ID || secrets.GH_APP_INSTALLATION_ID }}
+          GH_REVIEWER_APP_ID: ${{ vars.GH_REVIEWER_APP_ID || secrets.GH_REVIEWER_APP_ID }}
+          GH_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.GH_REVIEWER_APP_PRIVATE_KEY }}
+          GH_REVIEWER_APP_INSTALLATION_ID: ${{ vars.GH_REVIEWER_APP_INSTALLATION_ID || secrets.GH_REVIEWER_APP_INSTALLATION_ID }}
+          GH_REVIEWER_USERNAME: ${{ vars.GH_REVIEWER_USERNAME || secrets.GH_REVIEWER_USERNAME }}
+          ALLOWED_USERS: ${{ vars.ALLOWED_USERS || secrets.ALLOWED_USERS }}
+          ALLOWED_EMAIL_DOMAINS: ${{ vars.ALLOWED_EMAIL_DOMAINS || secrets.ALLOWED_EMAIL_DOMAINS }}
+          ALLOWED_EMAILS: ${{ vars.ALLOWED_EMAILS || secrets.ALLOWED_EMAILS }}
+          ALLOWED_GITHUB_ORGS: ${{ vars.ALLOWED_GITHUB_ORGS || secrets.ALLOWED_GITHUB_ORGS }}
+          UNSAFE_ALLOW_ALL_USERS: ${{ vars.UNSAFE_ALLOW_ALL_USERS || secrets.UNSAFE_ALLOW_ALL_USERS }}
+          ENABLE_SLACK_BOT: ${{ vars.ENABLE_SLACK_BOT || secrets.ENABLE_SLACK_BOT }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          SLACK_BOT_DEFAULT_MODEL: ${{ vars.SLACK_BOT_DEFAULT_MODEL || secrets.SLACK_BOT_DEFAULT_MODEL }}
+          ENABLE_GITHUB_BOT: ${{ vars.ENABLE_GITHUB_BOT || secrets.ENABLE_GITHUB_BOT }}
+          GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
+          GH_BOT_USERNAME: ${{ vars.GH_BOT_USERNAME || secrets.GH_BOT_USERNAME }}
+          GH_BOT_DEFAULT_MODEL: ${{ vars.GH_BOT_DEFAULT_MODEL || secrets.GH_BOT_DEFAULT_MODEL }}
+          ENABLE_LINEAR_BOT: ${{ vars.ENABLE_LINEAR_BOT || secrets.ENABLE_LINEAR_BOT }}
+          LINEAR_CLIENT_ID: ${{ vars.LINEAR_CLIENT_ID || secrets.LINEAR_CLIENT_ID }}
+          LINEAR_CLIENT_SECRET: ${{ secrets.LINEAR_CLIENT_SECRET }}
+          LINEAR_WEBHOOK_SECRET: ${{ secrets.LINEAR_WEBHOOK_SECRET }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          LINEAR_BOT_DEFAULT_MODEL: ${{ vars.LINEAR_BOT_DEFAULT_MODEL || secrets.LINEAR_BOT_DEFAULT_MODEL }}
+          ENABLE_SERVICE_BINDINGS: ${{ vars.ENABLE_SERVICE_BINDINGS || secrets.ENABLE_SERVICE_BINDINGS }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLASSIFICATION_ANTHROPIC_API_KEY: ${{ secrets.CLASSIFICATION_ANTHROPIC_API_KEY }}
+          CLASSIFICATION_OPENAI_API_KEY: ${{ secrets.CLASSIFICATION_OPENAI_API_KEY }}
+          CLASSIFICATION_BEDROCK_API_KEY: ${{ secrets.CLASSIFICATION_BEDROCK_API_KEY }}
+          CLASSIFICATION_MODEL: ${{ vars.CLASSIFICATION_MODEL }}
+          CLASSIFICATION_REASONING_EFFORT: ${{ vars.CLASSIFICATION_REASONING_EFFORT }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+          REPO_SECRETS_ENCRYPTION_KEY: ${{ secrets.REPO_SECRETS_ENCRYPTION_KEY }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          PROVIDER_ACCOUNTS_ENCRYPTION_KEY: ${{ secrets.PROVIDER_ACCOUNTS_ENCRYPTION_KEY }}
+          IMAGE_CALLBACK_TOKEN_PEPPER: ${{ secrets.IMAGE_CALLBACK_TOKEN_PEPPER }}
+          SERVICE_AUTH_SECRET_WEB: ${{ secrets.SERVICE_AUTH_SECRET_WEB }}
+          SERVICE_AUTH_SECRET_SLACK_BOT: ${{ secrets.SERVICE_AUTH_SECRET_SLACK_BOT }}
+          SERVICE_AUTH_SECRET_GITHUB_BOT: ${{ secrets.SERVICE_AUTH_SECRET_GITHUB_BOT }}
+          SERVICE_AUTH_SECRET_LINEAR_BOT: ${{ secrets.SERVICE_AUTH_SECRET_LINEAR_BOT }}
+          MODAL_WORKSPACE: ${{ vars.MODAL_WORKSPACE || secrets.MODAL_WORKSPACE }}
+          MODAL_ENVIRONMENT: ${{ vars.MODAL_ENVIRONMENT || secrets.MODAL_ENVIRONMENT }}
+          MODAL_ENVIRONMENT_WEB_SUFFIX: ${{ vars.MODAL_ENVIRONMENT_WEB_SUFFIX || secrets.MODAL_ENVIRONMENT_WEB_SUFFIX }}
+          MODAL_API_SECRET: ${{ secrets.MODAL_API_SECRET }}
+          DAYTONA_API_URL: ${{ vars.DAYTONA_API_URL || secrets.DAYTONA_API_URL }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          DAYTONA_BASE_SNAPSHOT: ${{ vars.DAYTONA_BASE_SNAPSHOT || secrets.DAYTONA_BASE_SNAPSHOT }}
+          DAYTONA_BASE_SNAPSHOT_MEMORY_GIB: ${{ vars.DAYTONA_BASE_SNAPSHOT_MEMORY_GIB }}
+          DAYTONA_TARGET: ${{ vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET }}
+          DAYTONA_TOOLBOX_API_URL: ${{ vars.DAYTONA_TOOLBOX_API_URL || secrets.DAYTONA_TOOLBOX_API_URL }}
+          DAYTONA_PREBUILDS_ENABLED: ${{ vars.DAYTONA_PREBUILDS_ENABLED || secrets.DAYTONA_PREBUILDS_ENABLED }}
+          VERCEL_SANDBOX_TOKEN: ${{ secrets.VERCEL_SANDBOX_TOKEN }}
+          VERCEL_SANDBOX_PROJECT_ID: ${{ vars.VERCEL_SANDBOX_PROJECT_ID || secrets.VERCEL_SANDBOX_PROJECT_ID }}
+          VERCEL_SANDBOX_TEAM_ID: ${{ vars.VERCEL_SANDBOX_TEAM_ID || secrets.VERCEL_SANDBOX_TEAM_ID }}
+          VERCEL_SANDBOX_API_BASE_URL: ${{ vars.VERCEL_SANDBOX_API_BASE_URL || secrets.VERCEL_SANDBOX_API_BASE_URL }}
+          VERCEL_BASE_SNAPSHOT_ID: ${{ vars.VERCEL_BASE_SNAPSHOT_ID || secrets.VERCEL_BASE_SNAPSHOT_ID }}
+          VERCEL_SANDBOX_RUNTIME: ${{ vars.VERCEL_SANDBOX_RUNTIME || secrets.VERCEL_SANDBOX_RUNTIME }}
+          VERCEL_SNAPSHOT_EXPIRATION_MS: ${{ vars.VERCEL_SNAPSHOT_EXPIRATION_MS || secrets.VERCEL_SNAPSHOT_EXPIRATION_MS }}
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+          E2B_API_URL: ${{ vars.E2B_API_URL || secrets.E2B_API_URL }}
+          E2B_TEMPLATE_ID: ${{ vars.E2B_TEMPLATE_ID || secrets.E2B_TEMPLATE_ID }}
+          E2B_SANDBOX_TIMEOUT_SECONDS: ${{ vars.E2B_SANDBOX_TIMEOUT_SECONDS || secrets.E2B_SANDBOX_TIMEOUT_SECONDS }}
+          E2B_AUTO_PAUSE: ${{ vars.E2B_AUTO_PAUSE || secrets.E2B_AUTO_PAUSE }}
+          E2B_TEMPLATE_CPU: ${{ vars.E2B_TEMPLATE_CPU || secrets.E2B_TEMPLATE_CPU }}
+          E2B_TEMPLATE_MEMORY_MB: ${{ vars.E2B_TEMPLATE_MEMORY_MB || secrets.E2B_TEMPLATE_MEMORY_MB }}
+          BOAT_API_KEY: ${{ secrets.BOAT_API_KEY }}
+          BOAT_API_URL: ${{ vars.BOAT_API_URL || secrets.BOAT_API_URL }}
+          BOAT_BASE_SNAPSHOT: ${{ vars.BOAT_BASE_SNAPSHOT || secrets.BOAT_BASE_SNAPSHOT }}
+          BOAT_ORG: ${{ vars.BOAT_ORG || secrets.BOAT_ORG }}
+          BOAT_SANDBOX_TYPE: ${{ vars.BOAT_SANDBOX_TYPE || secrets.BOAT_SANDBOX_TYPE }}
+          SESSION_DO_LOCATION_HINT: ${{ vars.SESSION_DO_LOCATION_HINT }}
+          SANDBOX_INACTIVITY_TIMEOUT_MS: ${{ vars.SANDBOX_INACTIVITY_TIMEOUT_MS || secrets.SANDBOX_INACTIVITY_TIMEOUT_MS }}
+          SANDBOX_UNATTENDED_INACTIVITY_TIMEOUT_MS: ${{ vars.SANDBOX_UNATTENDED_INACTIVITY_TIMEOUT_MS || secrets.SANDBOX_UNATTENDED_INACTIVITY_TIMEOUT_MS }}
+          SANDBOX_BOOT_TIMEOUT_MS: ${{ vars.SANDBOX_BOOT_TIMEOUT_MS || secrets.SANDBOX_BOOT_TIMEOUT_MS }}
+          TEAMS_ENFORCEMENT: ${{ vars.TEAMS_ENFORCEMENT || secrets.TEAMS_ENFORCEMENT }}
+
+      - name: Post Deploy Results
+        if: always()
+        run: |
+          echo "### Staging Deploy Results"
+          echo "Status: ${{ job.status }}"
+          echo "Commit: ${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "Trigger: ${{ github.event_name }}"

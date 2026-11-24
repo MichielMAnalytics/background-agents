@@ -26,7 +26,7 @@ import {
 import type { Env } from "./types";
 
 // The job bodies are mocked; the cron constants stay the production values so
-// the Terraform parity check below reads what the Worker really registers.
+// the deploy-config parity check below reads what the Worker really registers.
 vi.mock("./autofix/queue-health", () => ({ checkAutofixQueueHealth: vi.fn(async () => {}) }));
 vi.mock("./image-builds/scheduler", async (importOriginal) => ({
   ...(await importOriginal<typeof ImageBuildScheduler>()),
@@ -50,15 +50,17 @@ const { schedulerTick, sweepRun } = vi.hoisted(() => ({
   sweepRun: vi.fn(async () => ({})),
 }));
 
-const TERRAFORM_WORKER = resolve(
+const DEPLOY_CONFIG = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../../../terraform/environments/production/workers-control-plane.tf"
+  "../../../scripts/cloudflare-deploy/config.mjs"
 );
 
-/** The `cron_triggers` Terraform declares for the control-plane Worker. */
-function terraformCronTriggers(): string[] {
-  const match = /cron_triggers\s*=\s*\[([^\]]*)\]/.exec(readFileSync(TERRAFORM_WORKER, "utf8"));
-  if (!match) throw new Error(`No cron_triggers in ${TERRAFORM_WORKER}`);
+/** The cron triggers the Cloudflare deploy declares for the control-plane Worker. */
+function deployedCronTriggers(): string[] {
+  const match = /CONTROL_PLANE_CRONS = Object\.freeze\(\[([^\]]*)\]/.exec(
+    readFileSync(DEPLOY_CONFIG, "utf8")
+  );
+  if (!match) throw new Error(`No CONTROL_PLANE_CRONS in ${DEPLOY_CONFIG}`);
   return [...match[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
 }
 
@@ -87,14 +89,14 @@ describe("SCHEDULED_JOBS", () => {
     vi.clearAllMocks();
   });
 
-  it("binds each cron expression to exactly one job, and Terraform's triggers to exactly those", () => {
+  it("binds each cron expression to exactly one job, and the deploy's triggers to exactly those", () => {
     const crons = SCHEDULED_JOBS.map((job) => job.cron);
     expect(new Set(crons).size).toBe(crons.length);
     expect(new Set(SCHEDULED_JOBS.map((job) => job.name)).size).toBe(crons.length);
     expect([...crons].sort()).toEqual(
       [SCHEDULER_TICK_CRON, IMAGE_BUILD_SCHEDULER_CRON, ABANDONED_DRAFT_SWEEP_CRON].sort()
     );
-    expect([...terraformCronTriggers()].sort()).toEqual([...crons].sort());
+    expect([...deployedCronTriggers()].sort()).toEqual([...crons].sort());
     for (const job of SCHEDULED_JOBS) expect(findScheduledJob(job.cron)).toBe(job);
     expect(findScheduledJob("0 0 * * *")).toBeUndefined();
   });

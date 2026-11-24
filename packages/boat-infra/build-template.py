@@ -25,6 +25,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -75,6 +76,12 @@ VERIFY_TIMEOUT_SECONDS = 15 * 60
 STOP_TIMEOUT_SECONDS = 10 * 60
 SNAPSHOT_TIMEOUT_SECONDS = 30 * 60
 BUILD_SANDBOX_TTL_SECONDS = 3 * 60 * 60
+# A ready base this young is never pruned. Terraform publishes a base before the
+# deploy that binds it runs, and the two workflows are not serialized, so a prune
+# for an earlier deploy must leave a base a concurrent apply just published: the
+# deploy for it is still queued or running. It must outlast the Terraform apply
+# plus the deploy that follows it.
+PRUNE_GRACE_SECONDS = 3 * 60 * 60
 VERIFY_SANDBOX_TTL_SECONDS = 60 * 60
 # Enough of each log to explain a failure; never a transcript.
 LOG_TAIL_CHARS = 4000
@@ -458,10 +465,35 @@ def print_snapshot_allowance(phase: str, inventory: dict[str, Any]) -> None:
     )
 
 
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def snapshot_age_seconds(snapshot: dict[str, Any], now: datetime) -> float | None:
+    """Seconds since the snapshot was created, or None when Boat reports no usable time."""
+    created = snapshot.get("createdAt")
+    if not isinstance(created, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(created)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return (now - moment).total_seconds()
+
+
+def is_past_grace(snapshot: dict[str, Any], now: datetime) -> bool:
+    """Only a base known to be older than the grace period may be deleted."""
+    age = snapshot_age_seconds(snapshot, now)
+    return age is not None and age >= PRUNE_GRACE_SECONDS
+
+
 def prune_snapshots(
     api: BoatApi, prefix: str, deployed: str, replaced: str, *, dry_run: bool
 ) -> None:
-    """Retain the deployed base and the explicit predecessor supplied by the deployer."""
+    """Retain the deployed base, the explicit predecessor supplied by the deployer, and any
+    ready base younger than PRUNE_GRACE_SECONDS, which a deploy has not consumed yet."""
     validate_base_prefix(prefix)
     if replaced and replaced == deployed:
         raise RuntimeError(
@@ -493,6 +525,7 @@ def prune_snapshots(
         kept.add(replaced)
 
     print_snapshot_allowance("before", inventory)
+    now = utc_now()
     for snapshot in candidates:
         name = snapshot["name"]
         if name in kept:
@@ -500,6 +533,8 @@ def prune_snapshots(
             print(f"Keep {name} ({reason})", flush=True)
         elif snapshot["status"] not in {"ready", "failed"}:
             print(f"Keep {name} (status {snapshot['status']})", flush=True)
+        elif snapshot["status"] == "ready" and not is_past_grace(snapshot, now):
+            print(f"Keep {name} (within the {PRUNE_GRACE_SECONDS}s grace period)", flush=True)
         elif dry_run:
             print(f"Would delete {name}", flush=True)
         else:

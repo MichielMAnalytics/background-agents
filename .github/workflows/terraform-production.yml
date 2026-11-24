@@ -1,0 +1,73 @@
+name: Terraform Production
+
+# Provisions the production Cloudflare environment (terraform/environments/production):
+# D1, KV, R2, Queues, Worker scripts, Vercel projects and sandbox artifacts.
+# Worker code is deployed by deploy-production.yml, which runs after this workflow
+# completes on main. Path lists are held equal to TERRAFORM_PATHS in
+# scripts/cloudflare-deploy/changes.mjs.
+#
+# The state key (production/terraform.tfstate), the "production" GitHub
+# Environment for apply, and repository-level settings for PR plans are
+# unchanged from the former terraform.yml, so existing installations keep their
+# state, secrets and variables.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "!terraform/d1/**"
+      - "packages/boat-infra/**"
+      - "packages/daytona-infra/**"
+      - "packages/e2b-infra/**"
+      - "packages/modal-infra/**"
+      - "packages/sandbox-images/**"
+      - "packages/sandbox-runtime/**"
+      - "packages/vercel-infra/**"
+      - "package-lock.json"
+      - "packages/control-plane/scripts/build-vercel-base-snapshot.ts"
+      - "packages/control-plane/src/**"
+      - "packages/shared/package.json"
+      - "packages/shared/src/**"
+      - "packages/shared/tsconfig.json"
+      - ".github/workflows/terraform-cloudflare.yml"
+      - ".github/workflows/terraform-production.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "!terraform/d1/**"
+      - "packages/boat-infra/**"
+      - "packages/daytona-infra/**"
+      - "packages/e2b-infra/**"
+      - "packages/modal-infra/**"
+      - "packages/sandbox-images/**"
+      - "packages/sandbox-runtime/**"
+      - "packages/vercel-infra/**"
+      - "package-lock.json"
+      - "packages/control-plane/scripts/build-vercel-base-snapshot.ts"
+      - "packages/control-plane/src/**"
+      - "packages/shared/package.json"
+      - "packages/shared/src/**"
+      - "packages/shared/tsconfig.json"
+      - ".github/workflows/terraform-cloudflare.yml"
+      - ".github/workflows/terraform-production.yml"
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: terraform-production-${{ github.ref }}
+  cancel-in-progress: false # Don't cancel terraform operations
+
+jobs:
+  terraform:
+    name: Terraform
+    uses: ./.github/workflows/terraform-cloudflare.yml
+    with:
+      environment: production
+      working-directory: terraform/environments/production
+      plan-environment: ""
+    secrets: inherit

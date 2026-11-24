@@ -503,10 +503,11 @@ the image build.
 
 ### Deploy
 
-Deployment is managed via Terraform. See [terraform/README.md](../../terraform/README.md) for
-details.
-
-All secrets and environment variables are configured through Terraform's `terraform.tfvars` file.
+Terraform provisions the Worker script and its resources (D1, KV, R2, Queues); the Cloudflare deploy
+(`scripts/cloudflare-deploy/deploy.mjs`) uploads the code with Wrangler, applies D1 and Durable
+Object migrations, and sets the Worker's variables and secrets from environment variables. See
+[terraform/README.md](../../terraform/README.md) and
+[docs/GETTING_STARTED.md](../../docs/GETTING_STARTED.md) for details.
 
 ## SQLite Schema
 
@@ -602,7 +603,7 @@ context contains only the browser-session and signed-channel evidence. Provider-
 authorities resolve linked accounts on demand for workflows such as GitHub SCM enrichment; linked
 accounts do not participate in browser-session authentication.
 
-Terraform configures `WEB_APP_URL`, provider credentials, admission allowlists, and
+The Cloudflare deploy configures `WEB_APP_URL`, provider credentials, admission allowlists, and
 `BROWSER_AUTH_SECRET` on this worker. `WEB_APP_URL` must be the exact browser-visible HTTPS origin,
 except that an HTTP loopback origin is accepted for local development.
 
@@ -860,7 +861,7 @@ provider, user-identity, and snapshot boundaries, see
 
 ### Configuration
 
-All secrets are configured via Terraform. Required secrets include:
+All secrets are configured by the Cloudflare deploy. Required secrets include:
 
 - `GITHUB_APP_ID` - GitHub App ID
 - `GITHUB_APP_PRIVATE_KEY` - GitHub App private key (PKCS#8 format)
@@ -871,8 +872,9 @@ All secrets are configured via Terraform. Required secrets include:
 Optional variables:
 
 - `provider_accounts_encryption_key` - Existing Base64 AES-256-GCM key override for provider account
-  credentials. When blank, Terraform generates a key and persists it in state. In both cases,
-  Terraform supplies the required `PROVIDER_ACCOUNTS_ENCRYPTION_KEY` Worker secret binding.
+  credentials. When blank, Terraform generates a key and persists it in state. In both cases, the
+  deploy binds the value as the required `PROVIDER_ACCOUNTS_ENCRYPTION_KEY` Worker secret (see
+  `generated_worker_secrets` in the Terraform outputs).
 
 - `SCM_PROVIDER` - Source control provider for this deployment (`github`, `bitbucket`, or `gitlab`,
   default: `github`). `bitbucket` returns explicit `501 Not Implemented` responses until
@@ -884,7 +886,7 @@ Optional variables:
   `GET /repos` lists projects within the group instead of all projects the token has access to.
 
 See
-[terraform/environments/production/terraform.tfvars.example](../../terraform/environments/production/terraform.tfvars.example)
+[scripts/cloudflare-deploy/deploy.env.example](../../scripts/cloudflare-deploy/deploy.env.example)
 for the complete list.
 
 ### Deployment Recommendations

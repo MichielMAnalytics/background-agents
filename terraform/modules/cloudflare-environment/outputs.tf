@@ -1,0 +1,187 @@
+# =============================================================================
+# Infrastructure Outputs
+# =============================================================================
+
+output "slack_kv_id" {
+  description = "Slack KV namespace ID"
+  value       = var.enable_slack_bot ? module.slack_kv[0].namespace_id : null
+}
+
+output "github_kv_id" {
+  description = "GitHub KV namespace ID"
+  value       = var.enable_github_bot ? module.github_kv[0].namespace_id : null
+}
+
+# Cloudflare D1 Database
+output "d1_database_id" {
+  description = "The ID of the D1 database"
+  value       = cloudflare_d1_database.main.id
+}
+
+output "d1_database_name" {
+  description = "The name of the D1 database used by operator CLI commands"
+  value       = cloudflare_d1_database.main.name
+}
+
+# Cloudflare Workers
+output "control_plane_url" {
+  description = "Control plane worker URL"
+  value       = module.control_plane_worker.worker_url
+}
+
+output "control_plane_worker_name" {
+  description = "Control plane worker name"
+  value       = module.control_plane_worker.worker_name
+}
+
+output "slack_bot_worker_name" {
+  description = "Slack bot worker name"
+  value       = var.enable_slack_bot ? module.slack_bot_worker[0].worker_name : null
+}
+
+output "slack_bot_worker_url" {
+  description = "Slack bot worker URL"
+  value       = var.enable_slack_bot ? module.slack_bot_worker[0].worker_url : null
+}
+
+output "slack_bot_events_url" {
+  description = "Slack Events API request URL"
+  value       = var.enable_slack_bot ? "${module.slack_bot_worker[0].worker_url}/events" : null
+}
+
+output "slack_bot_interactions_url" {
+  description = "Slack interactivity request and options load URL"
+  value       = var.enable_slack_bot ? "${module.slack_bot_worker[0].worker_url}/interactions" : null
+}
+
+output "linear_kv_id" {
+  description = "Linear KV namespace ID"
+  value       = var.enable_linear_bot ? module.linear_kv[0].namespace_id : null
+}
+
+output "linear_bot_worker_name" {
+  description = "Linear bot worker name"
+  value       = var.enable_linear_bot ? module.linear_bot_worker[0].worker_name : null
+}
+
+output "linear_bot_webhook_url" {
+  description = "Linear bot webhook URL (set in Linear OAuth Application webhook config)"
+  value       = var.enable_linear_bot ? "${module.linear_bot_worker[0].worker_url}/webhook" : null
+}
+
+output "linear_bot_oauth_authorize_url" {
+  description = "Visit this URL to install the Linear agent in your workspace (requires admin)"
+  value       = var.enable_linear_bot ? "${module.linear_bot_worker[0].worker_url}/oauth/authorize" : null
+}
+
+output "github_bot_worker_name" {
+  description = "GitHub bot worker name"
+  value       = var.enable_github_bot ? module.github_bot_worker[0].worker_name : null
+}
+
+output "web_worker_name" {
+  description = "Cloudflare web Worker name the deploy uploads when web_platform = \"cloudflare\""
+  value       = var.web_platform == "cloudflare" ? local.web_worker_name : null
+}
+
+# Web App
+output "web_app_url" {
+  description = "Web app URL. For web_platform = \"cloudflare\" this is the workers.dev URL; the deploy serves CLOUDFLARE_CUSTOM_DOMAIN instead when one is configured."
+  value       = local.effective_web_app_url
+}
+
+output "web_app_platform" {
+  description = "Web app deployment platform"
+  value       = var.web_platform
+}
+
+output "sandbox_provider" {
+  description = "Sandbox backend selected for this deployment"
+  value       = var.sandbox_provider
+}
+
+output "vercel_base_snapshot_id" {
+  description = "Vercel base runtime snapshot ID configured for sandbox creation"
+  value       = local.use_vercel_backend && var.vercel_base_snapshot_id != "" ? var.vercel_base_snapshot_id : null
+}
+
+output "vercel_base_snapshot_name" {
+  description = "Managed Vercel base runtime snapshot sandbox name"
+  value       = local.use_vercel_backend && var.vercel_base_snapshot_id == "" ? module.vercel_sandbox_infra[0].snapshot_name : null
+}
+
+output "boat_base_snapshot" {
+  description = "Managed Boat saved snapshot fresh sandboxes deploy from"
+  value       = local.use_boat_backend ? module.boat_infra[0].snapshot_name : null
+}
+
+output "web_app_project_id" {
+  description = "Vercel project ID (null when using Cloudflare)"
+  value       = var.web_platform == "vercel" ? module.web_app[0].project_id : null
+}
+
+# Modal
+output "modal_app_name" {
+  description = "Modal app name"
+  value       = local.use_modal_backend ? module.modal_app[0].app_name : null
+}
+
+output "modal_health_url" {
+  description = "Modal health check endpoint"
+  value       = local.use_modal_backend ? module.modal_app[0].api_health_url : null
+}
+
+# =============================================================================
+# Verification Commands
+# =============================================================================
+
+output "verification_commands" {
+  description = "Commands to verify the deployment"
+  value       = <<-EOF
+
+    # 1. Health check control plane
+    curl ${module.control_plane_worker.worker_url}/health
+
+    # 2. Health check sandbox backend
+    ${local.use_modal_backend ? "curl ${module.modal_app[0].api_health_url}" : local.use_vercel_backend ? "# Vercel sandboxes use the Vercel Sandbox API directly. Base snapshot: ${var.vercel_base_snapshot_id != "" ? var.vercel_base_snapshot_id : module.vercel_sandbox_infra[0].snapshot_name}" : local.use_boat_backend ? "# Boat sandboxes use the REST API directly. Saved snapshot: ${module.boat_infra[0].snapshot_name}" : "# Daytona and E2B sandboxes use their REST APIs directly — no health endpoint to check"}
+
+    # 3. Verify web app deployment (with a Cloudflare custom domain, curl that hostname instead)
+    curl ${local.effective_web_app_url}
+
+    # 4. Test authenticated endpoint (should return 401)
+    curl ${module.control_plane_worker.worker_url}/sessions
+
+  EOF
+}
+
+# Documentation Site
+output "docs_site_project_id" {
+  description = "Vercel project ID for the documentation site; set it as the VERCEL_DOCS_PROJECT_ID repository variable so Deploy Docs can publish (null when docs_site_enabled = false)"
+  value       = var.docs_site_enabled ? module.docs_site[0].project_id : null
+}
+
+output "docs_site_url" {
+  description = "Documentation site URL (null when docs_site_enabled = false)"
+  value       = var.docs_site_enabled ? coalesce(local.docs_custom_domain_url, module.docs_site[0].production_url) : null
+}
+
+# =============================================================================
+# Generated Worker Secrets
+# =============================================================================
+# Secrets Terraform generates and keeps in state. The Cloudflare deploy reads
+# them from the GitHub Environment under these names; copy them there once with
+# scripts/cloudflare-deploy/sync-generated-secrets.mjs. The web value also
+# reaches the Vercel project directly, so it must stay identical in both.
+
+output "generated_worker_secrets" {
+  description = "Terraform-generated Worker secrets keyed by the GitHub Environment secret name the Cloudflare deploy reads"
+  sensitive   = true
+  value = {
+    SERVICE_AUTH_SECRET_WEB          = random_password.service_auth_secret_web.result
+    SERVICE_AUTH_SECRET_SLACK_BOT    = random_password.service_auth_secret_slack_bot.result
+    SERVICE_AUTH_SECRET_GITHUB_BOT   = random_password.service_auth_secret_github_bot.result
+    SERVICE_AUTH_SECRET_LINEAR_BOT   = random_password.service_auth_secret_linear_bot.result
+    IMAGE_CALLBACK_TOKEN_PEPPER      = random_password.image_callback_token_pepper.result
+    PROVIDER_ACCOUNTS_ENCRYPTION_KEY = local.effective_provider_accounts_encryption_key
+  }
+}

@@ -24,8 +24,10 @@ vercel_sandbox_project_id = "prj_..."
 # Snapshot/runtime settings
 # vercel_base_snapshot_id     = "snapshot_..." # optional manual override; Terraform skips managed builds when set
 # vercel_sandbox_runtime        = "node24"
-# vercel_snapshot_expiration_ms = 0
 ```
+
+`VERCEL_SNAPSHOT_EXPIRATION_MS` (default `0`, no expiration) is a deploy setting, not a Terraform
+variable: set it in `deploy.env` or the GitHub Environment.
 
 For GitHub Actions-based deployment, configure the matching repository secrets:
 

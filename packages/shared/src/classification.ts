@@ -87,9 +87,8 @@ export type ClassificationTarget = AnthropicMessagesTarget | OpenAIChatTarget;
 
 type ClassificationProvider = ClassificationModel["provider"];
 
-// Mirrors local.classifier_model_patterns in
-// terraform/environments/production/locals.tf, so plan rejects the ids the
-// bots reject. The Bedrock pattern checks format only: Bedrock can still
+// Mirrored by CLASSIFIER_MODEL_PATTERNS in scripts/cloudflare-deploy/config.mjs,
+// so the deploy rejects the ids the bots reject. The Bedrock pattern checks format only: Bedrock can still
 // reject a matching id, such as an in-Region model id that serves on-demand
 // traffic only through an inference profile.
 const MODEL_ID_PATTERNS = {

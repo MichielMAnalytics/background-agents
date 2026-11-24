@@ -1,13 +1,15 @@
 # Everything that parses the AWS deployment without deploying it.
 #
-# Split out of terraform.yml because its path filter is the union of every
+# Split out of the Terraform workflow (now terraform-cloudflare.yml) because its
+# path filter is the union of every
 # service's -- a change to the web app was running the whole AWS suite. These
 # checks need no credentials and no AWS account (mocked providers, a stubbed
 # CLI), so they run for everyone; they just have no business running for
 # everything.
 #
-# `terraform fmt` and the production environment's own tests stay in
-# terraform.yml, which a change under `terraform/**` triggers anyway.
+# `terraform fmt` and the Cloudflare environment module's own tests stay in
+# terraform-cloudflare.yml, which a change under `terraform/**` triggers anyway.
+
 name: AWS stack
 
 on:

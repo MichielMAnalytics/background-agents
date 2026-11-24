@@ -89,15 +89,16 @@ mandatory Metadata read permission). Disable its webhooks and install it on the 
 want reviewed. The main App continues to receive webhook events and handle other GitHub operations;
 the second App is only the review-submission identity.
 
-Set all four Terraform values together, or leave all four empty:
+Set all four Cloudflare deploy settings together, or leave all four empty (in `deploy.env` or the
+GitHub Environment; see `scripts/cloudflare-deploy/deploy.env.example`):
 
-- `github_reviewer_app_id`: the second App's ID
-- `github_reviewer_app_private_key`: its private key in PKCS#8 PEM format
-- `github_reviewer_app_installation_id`: its installation ID
-- `github_reviewer_username`: its exact bot login, such as `my-reviewer[bot]`
+- `GH_REVIEWER_APP_ID`: the second App's ID
+- `GH_REVIEWER_APP_PRIVATE_KEY`: its private key in PKCS#8 PEM format
+- `GH_REVIEWER_APP_INSTALLATION_ID`: its installation ID
+- `GH_REVIEWER_USERNAME`: its exact bot login, such as `my-reviewer[bot]`
 
-The three credentials are control-plane bindings (`GITHUB_REVIEWER_APP_*`); the login is a GitHub
-bot binding (`GITHUB_REVIEWER_USERNAME`). For non-Terraform deployments, configure the same four
+The deploy binds the three credentials to the control plane (`GITHUB_REVIEWER_APP_*`) and the login
+to the GitHub bot (`GITHUB_REVIEWER_USERNAME`). For other deployments, configure the same four
 values on their respective services. A login without all three credentials stops every review, while
 credentials without the login leave reviews on the main App's identity.
 
@@ -414,7 +415,7 @@ Important limitations:
 ### The bot does not respond to a PR
 
 Check that the GitHub App is installed on the repository and that the GitHub Bot worker is enabled.
-Then confirm the webhook URL, webhook secret, subscribed events, and `github_bot_username` in
+Then confirm the webhook URL, webhook secret, subscribed events, and `GH_BOT_USERNAME` in
 [Complete GitHub Bot Setup](../GETTING_STARTED.md#github-bot-optional).
 
 Also check **Settings > Integrations > GitHub**. For direct GitHub Bot workflows, the repository may

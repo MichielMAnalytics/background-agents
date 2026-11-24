@@ -55,27 +55,33 @@ Fill in:
 
 Note the **Client ID**, **Client Secret**, and **Webhook Signing Secret**.
 
-### 2. Deploy via Terraform
+### 2. Provision and deploy
 
-Set `enable_linear_bot = true` and add to your `terraform.tfvars`:
+Set `enable_linear_bot = true` in `terraform.tfvars` (Terraform provisions the Worker script and KV
+namespace), then add to `deploy.env` or the GitHub Environment, which the Cloudflare deploy binds to
+the Worker:
 
-```hcl
-enable_linear_bot     = true
-linear_client_id      = "your-client-id"
-linear_client_secret  = "your-client-secret"
-linear_webhook_secret = "your-webhook-signing-secret"
+```bash
+ENABLE_LINEAR_BOT=true
+LINEAR_CLIENT_ID=your-client-id
+LINEAR_CLIENT_SECRET=your-client-secret
+LINEAR_WEBHOOK_SECRET=your-webhook-signing-secret
 ```
 
-The worker also requires these secrets (set via `wrangler secret put` or Terraform):
+The worker also requires these secrets, which the deploy binds from the same settings:
 
-- Exactly one classifier credential selected by `CLASSIFICATION_MODEL`: **`ANTHROPIC_API_KEY`** for
-  an Anthropic model (the default), **`OPENAI_API_KEY`** for an OpenAI model, or
-  **`BEDROCK_API_KEY`** for a `bedrock/<aws-region>/<inference-profile-id>` model on Claude in
-  Amazon Bedrock (see
+- Exactly one classifier credential selected by `CLASSIFICATION_MODEL`. Set the deploy setting
+  **`ANTHROPIC_API_KEY`** (or `CLASSIFICATION_ANTHROPIC_API_KEY`) for an Anthropic model (the
+  default), **`CLASSIFICATION_OPENAI_API_KEY`** for an OpenAI model, or
+  **`CLASSIFICATION_BEDROCK_API_KEY`** for a `bedrock/<aws-region>/<inference-profile-id>` model on
+  Claude in Amazon Bedrock; the deploy binds it to the Worker as `ANTHROPIC_API_KEY`,
+  `OPENAI_API_KEY` or `BEDROCK_API_KEY` (see
   [Classify on Amazon Bedrock (Optional)](../../docs/GETTING_STARTED.md#classify-on-amazon-bedrock-optional))
 - **`SERVICE_AUTH_SECRET`** — per-service sig1 signing secret; also verifies CP callbacks
 
-Then `terraform apply`.
+Run `terraform apply`, then the Cloudflare deploy. On an existing deployment, set
+`ENABLE_SERVICE_BINDINGS=false` for that first deploy and `true` for the next, because the control
+plane and the new bot bind each other.
 
 ### 3. Install the Agent in Your Workspace
 

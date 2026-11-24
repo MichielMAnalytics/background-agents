@@ -41,7 +41,7 @@ the artifact is a Modal image built on the VM backend. Images built under `modal
 `modal-vm` sessions. Boat's artifact has its own allowance and snapshot rules — see
 [Boat prebuilds](#boat-prebuilds).
 
-Daytona additionally requires an operator to open admission (`daytona_prebuilds_enabled`, default
+Daytona additionally requires an operator to open admission (`DAYTONA_PREBUILDS_ENABLED`, default
 off) — see [Daytona prebuilds](#daytona-prebuilds) below. While admission is closed the settings
 controls stay visible and say so, and nothing starts a build. Read every "triggers a build"
 statement below as conditional on admission when the deployment is on Daytona: enabling a
@@ -284,8 +284,8 @@ boot marker explicitly rather than relying on absence.
 
 ### Admission
 
-`daytona_prebuilds_enabled` (Terraform) / `DAYTONA_PREBUILDS_ENABLED` (env) admits **new** Daytona
-build work. Default off. It gates exactly two things:
+`DAYTONA_PREBUILDS_ENABLED` (a deploy setting on Cloudflare, an environment variable elsewhere)
+admits **new** Daytona build work. Default off. It gates exactly two things:
 
 - starting a build — manual rebuild, save hook, and the reconciliation cron alike
 - selecting a prebuilt image for a fresh session

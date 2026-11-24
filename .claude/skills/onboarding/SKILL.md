@@ -2,8 +2,8 @@
 name: onboarding
 description:
   Deploy your own Open-Inspect instance. Use when the user wants to set up, deploy, or onboard to
-  Open-Inspect. Guides through repository setup, credential collection, Terraform deployment, and
-  verification with user handoffs.
+  Open-Inspect. Guides through repository setup, credential collection, Terraform provisioning, the
+  Cloudflare Worker deploy, and verification with user handoffs.
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion, TodoWrite
 ---
@@ -24,7 +24,7 @@ Use TodoWrite to create a checklist tracking these phases:
 5. Slack App creation (if enabled)
 6. Security secrets generation
 7. Terraform configuration
-8. Terraform deployment (two phases)
+8. Terraform provisioning and Cloudflare deploy
 9. Post-deployment Slack setup (if enabled)
 10. Post-deployment GitHub Bot setup (if enabled)
 11. Web app deployment
@@ -59,7 +59,19 @@ Use AskUserQuestion to gather:
    Validate the chosen providers and admission mode against the compatibility table and allowlist
    rules in Step 5 of `docs/GETTING_STARTED.md` before proceeding.
 9. **Prerequisites confirmation** - Confirm they have Cloudflare, Modal, Anthropic, and GitHub
-   accounts, plus Vercel only if selected above.
+   accounts, plus Vercel only if selected above. Check the tools too, and install what is missing:
+
+```bash
+node --version       # must match .nvmrc (24 or newer): the deploy uses `node --env-file`
+terraform version    # 1.14.0 or newer
+uv --version         # Python tooling for the Modal and sandbox steps
+gh auth status       # creates the repository and, later, Actions secrets
+wrangler --version   # used below to create the Terraform state bucket
+```
+
+This guide deploys one environment, production. The repository also contains
+`terraform/environments/staging` and `.github/workflows/deploy-staging.yml`; ignore them. Staging
+stays inert unless the repository variable `CLOUDFLARE_STAGING_ENABLED` is set to `true`.
 
 ## Phase 2: Repository Setup
 
@@ -151,7 +163,7 @@ user selected GitHub:
    permission change approved on their installations.
 9. Create app, note **App ID**
 10. If GitHub sign-in is selected, generate a **Client Secret** and note the **Client ID** and
-    **Client Secret**. Otherwise leave both Terraform values empty.
+    **Client Secret**. Otherwise leave both deploy values empty.
 11. Generate **Private Key** (downloads .pem file)
 12. Install app on account, note **Installation ID** from URL
 
@@ -165,7 +177,7 @@ cat /tmp/github-app-key-pkcs8.pem
 ## Phase 4b: Google OAuth Setup (If Enabled)
 
 Only if the user selected Google sign-in. Skip for GitHub-only deployments and leave
-`google_client_id` and `google_client_secret` empty.
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` empty.
 
 Guide user:
 
@@ -177,12 +189,12 @@ Guide user:
    verification review required)
 5. Note **Client ID** and **Client Secret**
 
-Then in `terraform.tfvars`:
+Then in `deploy.env`:
 
-- Set `google_client_id` and `google_client_secret` (both required together; leave both empty to
+- Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` (both required together; leave both empty to
   disable)
-- If Google is the only sign-in provider, leave `github_client_id` and `github_client_secret` empty.
-  Keep the GitHub App ID, private key, and installation ID configured for repository access.
+- If Google is the only sign-in provider, leave `GH_OAUTH_CLIENT_ID` and `GH_OAUTH_CLIENT_SECRET`
+  empty. Keep the GitHub App ID, private key, and installation ID configured for repository access.
 
 The next request to `/login` shows Google after both credentials are deployed; no separate web flag
 or rebuild is required. Google users get the same flat access; their PRs fall back to the App bot
@@ -207,14 +219,35 @@ to Slack. Reinstall the app whenever either scope is added to an existing instal
 ## Phase 6: Generate Security Secrets
 
 ```bash
-echo "token_encryption_key: $(openssl rand -base64 32)"
-echo "repo_secrets_encryption_key: $(openssl rand -base64 32)"
-echo "nextauth_secret: $(openssl rand -base64 32)"
-echo "modal_api_secret: $(openssl rand -hex 32)"
-echo "github_webhook_secret: $(openssl rand -hex 32)"  # Only if GitHub bot enabled
+echo "TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)"         # deploy.env
+echo "REPO_SECRETS_ENCRYPTION_KEY=$(openssl rand -base64 32)"  # deploy.env
+echo "NEXTAUTH_SECRET=$(openssl rand -base64 32)"              # deploy.env
+echo "MODAL_API_SECRET=$(openssl rand -hex 32)"  # deploy.env and modal_api_secret in terraform.tfvars
+echo "GH_WEBHOOK_SECRET=$(openssl rand -hex 32)" # deploy.env, only if GitHub bot enabled
 ```
 
-## Phase 7: Terraform Configuration
+## Phase 7: Terraform and Deploy Configuration
+
+Terraform provisions infrastructure only; the Cloudflare deploy script
+(`scripts/cloudflare-deploy/deploy.mjs`) uploads the Workers and owns every Worker setting.
+Infrastructure values go in `terraform.tfvars`; deploy-only values (GitHub App and OAuth
+credentials, bot tokens and secrets, classifier settings, encryption keys, allowlists,
+`TEAMS_ENFORCEMENT`, custom domain) go in `deploy.env` at the repository root, created from
+`scripts/cloudflare-deploy/deploy.env.example`. Shared values (deployment name, Cloudflare account
+and subdomain, web platform, sandbox provider and its credentials, Modal settings,
+`MODAL_API_SECRET`, `ENABLE_*_BOT`) go in both. See Step 5 of `docs/GETTING_STARTED.md`.
+
+Start both files from their examples (`terraform/environments/production/terraform.tfvars.example`
+and `scripts/cloudflare-deploy/deploy.env.example`) and fill in the collected answers. Never commit
+or paste `deploy.env`: it is gitignored and holds every secret in the deployment.
+
+These values appear in both files and must be identical, because the deploy names the sandbox
+artifact Terraform builds from them: `deployment_name`/`DEPLOYMENT_NAME`,
+`cloudflare_account_id`/`CLOUDFLARE_ACCOUNT_ID`,
+`cloudflare_worker_subdomain`/`CLOUDFLARE_WORKER_SUBDOMAIN`, `web_platform`/`WEB_PLATFORM`,
+`sandbox_provider`/`SANDBOX_PROVIDER`, the Modal settings and `MODAL_API_SECRET`, the
+`enable_*_bot`/`ENABLE_*_BOT` flags, and the provider-specific names and sizes for Daytona, E2B and
+Boat.
 
 Create `terraform/environments/production/backend.tfvars`. The bucket is already fixed as
 `open-inspect-terraform-state` in `backend.tf`; do not override it here:
@@ -227,60 +260,71 @@ endpoints = {
 }
 ```
 
-Create `terraform/environments/production/terraform.tfvars` with all collected values. Set:
+Create `terraform/environments/production/terraform.tfvars` with the infrastructure values and
+`web_platform = "{vercel_or_cloudflare_from_phase_1}"`. If Vercel was not selected, leave
+`vercel_api_token` and `vercel_team_id` unset (not empty strings).
 
-```hcl
-web_platform                   = "{vercel_or_cloudflare_from_phase_1}"
-enable_durable_object_bindings = false
-enable_service_bindings        = false
-```
+Create `deploy.env` with the deploy values and `ENABLE_SERVICE_BINDINGS=false` for the first deploy.
 
-If Phase 1 selected a Cloudflare custom domain, also set `cloudflare_custom_domain` and
-`cloudflare_zone_id` to the collected hostname and zone ID. Leave both unset otherwise. If Vercel
-was not selected, leave `vercel_api_token` and `vercel_team_id` unset (not empty strings).
+If Phase 1 selected a Cloudflare custom domain, set `CLOUDFLARE_CUSTOM_DOMAIN` and
+`CLOUDFLARE_ZONE_ID` in `deploy.env` to the collected hostname and zone ID. Leave both unset
+otherwise.
 
-Set `enable_slack_bot = false` if Slack was declined in Phase 1; Terraform defaults it to `true`. If
-Slack was selected, set `enable_slack_bot = true`, `slack_bot_token`, and `slack_signing_secret` to
-the collected values.
+Set `enable_slack_bot = false` (tfvars) and `ENABLE_SLACK_BOT=false` (deploy.env) if Slack was
+declined in Phase 1; both default to `true`. If Slack was selected, set both to `true` and set
+`SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` in `deploy.env`.
 
-Write the restricted-mode comma-separated Phase 1 answers to `allowed_users`,
-`allowed_email_domains`, `allowed_emails`, and `allowed_github_orgs`; leave unused inputs empty and
-set `unsafe_allow_all_users = false`. For explicitly open mode, leave all four lists empty and set
-`unsafe_allow_all_users = true`. Use Step 5 of `docs/GETTING_STARTED.md` for the admission contract.
+Write the restricted-mode comma-separated Phase 1 answers to `ALLOWED_USERS`,
+`ALLOWED_EMAIL_DOMAINS`, `ALLOWED_EMAILS`, and `ALLOWED_GITHUB_ORGS` in `deploy.env`; leave unused
+ones empty and set `UNSAFE_ALLOW_ALL_USERS=false`. For explicitly open mode, leave all four lists
+empty and set `UNSAFE_ALLOW_ALL_USERS=true`. Use Step 5 of `docs/GETTING_STARTED.md` for the
+admission contract.
 
-If GitHub bot is enabled, also set:
-
-```hcl
-enable_github_bot     = true
-github_webhook_secret = "{generated_value}"
-github_bot_username   = "{app-slug}[bot]"
-```
-
-## Phase 8: Terraform Deployment (Two-Phase)
-
-**Important**: Build the workers before running Terraform (Terraform references the built bundles):
+If GitHub bot is enabled, set `enable_github_bot = true` in tfvars and in `deploy.env`:
 
 ```bash
-npm run build -w @open-inspect/control-plane -w @open-inspect/slack-bot -w @open-inspect/github-bot
+ENABLE_GITHUB_BOT=true
+GH_WEBHOOK_SECRET={generated_value}
+GH_BOT_USERNAME="{app-slug}[bot]"
 ```
 
-**Phase 1** (bindings disabled):
+## Phase 8: Provision and Deploy
+
+Check `deploy.env` before provisioning anything. A dry run validates every setting and builds the
+Wrangler configs without contacting Cloudflare:
+
+```bash
+npm install
+node --env-file=deploy.env scripts/cloudflare-deploy/deploy.mjs --dry-run
+```
+
+Fix every problem it lists, then provision infrastructure:
 
 ```bash
 cd terraform/environments/production
 terraform init -backend-config=backend.tfvars
 terraform apply
+cd ../../..
 ```
 
-**Phase 2** (after Phase 1 succeeds): Update tfvars to set both bindings to `true`, then:
+Add the Terraform-generated secrets
+(`terraform -chdir=terraform/environments/production output -json generated_worker_secrets`) to
+`deploy.env` as `SERVICE_AUTH_SECRET_WEB`, `SERVICE_AUTH_SECRET_SLACK_BOT`,
+`SERVICE_AUTH_SECRET_GITHUB_BOT`, `SERVICE_AUTH_SECRET_LINEAR_BOT`, `IMAGE_CALLBACK_TOKEN_PEPPER`,
+and `PROVIDER_ACCOUNTS_ENCRYPTION_KEY`. Then deploy the Workers (D1 and Durable Object migrations
+are applied automatically):
 
 ```bash
-terraform apply
+npm install
+CLOUDFLARE_API_TOKEN={cloudflare_api_token} node --env-file=deploy.env scripts/cloudflare-deploy/deploy.mjs
 ```
+
+After the first deploy succeeds, set `ENABLE_SERVICE_BINDINGS=true` in `deploy.env` and run the
+deploy again (bots and control plane bind each other).
 
 ## Phase 9: Complete Slack Setup (If Enabled)
 
-After Terraform deployment, guide user:
+After the Cloudflare deploy, guide user:
 
 The user can apply `packages/slack-bot/slack-app-manifest.yaml` instead of configuring the following
 settings individually. Replace `SLACK_EVENTS_URL` with the worker's `/events` URL and
@@ -288,8 +332,8 @@ settings individually. Replace `SLACK_EVENTS_URL` with the worker's `/events` UR
 `message.channels` and `message.groups` for channel-message automations; remove them if the
 deployment will not use that feature.
 
-OAuth scopes, app installation, the bot token, and the signing secret must be configured before
-`terraform apply`. Apply the URL-dependent manifest after deployment.
+OAuth scopes, app installation, the bot token, and the signing secret must be configured before the
+Cloudflare deploy. Apply the URL-dependent manifest after deployment.
 
 ### Enable Agents
 
@@ -324,7 +368,7 @@ writable Messages tab lets users start direct-message sessions.
 
 ## Phase 10: Complete GitHub Bot Setup (If Enabled)
 
-After Terraform deployment, guide user:
+After the Cloudflare deploy, guide user:
 
 ### Configure Webhook on GitHub App
 
@@ -332,7 +376,7 @@ After Terraform deployment, guide user:
 2. Under **Webhook**: check **"Active"**
 3. **Webhook URL**:
    `https://open-inspect-github-bot-{deployment_name}.{subdomain}.workers.dev/webhooks/github`
-4. **Webhook secret**: Enter the `github_webhook_secret` value
+4. **Webhook secret**: Enter the `GH_WEBHOOK_SECRET` value
 5. Under **Subscribe to events**, check: **Pull requests**, **Issues**, **Issue comments**, **Pull
    request reviews**, **Pull request review comments**, **Check suites**, **Workflow runs**
 6. Save changes
@@ -340,8 +384,7 @@ After Terraform deployment, guide user:
 ### Find Bot Username
 
 The bot username is the App's slug with `[bot]` appended. E.g., if the app is `My-Inspect-App`, the
-bot username is `my-inspect-app[bot]`. Confirm this matches `github_bot_username` in
-terraform.tfvars.
+bot username is `my-inspect-app[bot]`. Confirm this matches `GH_BOT_USERNAME` in `deploy.env`.
 
 ### Usage
 
@@ -350,8 +393,8 @@ terraform.tfvars.
 
 ## Phase 11: Web App Deployment
 
-For the Cloudflare choice from Phase 1, Terraform deploys the web app; no manual step is needed. For
-Vercel, deploy from the repository root:
+For the Cloudflare choice from Phase 1, the Cloudflare deploy in Phase 8 deploys the web app; no
+manual step is needed. For Vercel, deploy from the repository root:
 
 ```bash
 npx vercel link --project open-inspect-{deployment_name}
@@ -375,6 +418,14 @@ curl "$(terraform -chdir=terraform/environments/production output -raw modal_hea
 curl -I "$(terraform -chdir=terraform/environments/production output -raw web_app_url)"
 ```
 
+If Phase 1 chose a Cloudflare custom domain, `web_app_url` still prints the workers.dev address,
+which is disabled for the web Worker in that case. Check `https://{CLOUDFLARE_CUSTOM_DOMAIN}`
+instead:
+
+```bash
+curl -I https://{custom_domain}
+```
+
 Present a deployment summary table. Instruct the user to test: visit the web app, sign in with each
 configured provider, create a session, and send a prompt.
 
@@ -384,27 +435,53 @@ Ask if user wants GitHub Actions CI/CD. If yes, follow the "Set Up CI/CD (Option
 `docs/GETTING_STARTED.md` for the required variables and secrets, including the Phase 1 admission
 mode and allowlists. CI uses the same `open-inspect-terraform-state` R2 bucket as local Terraform.
 
+Two workflows then run on pushes to `main`: `terraform-production.yml` provisions, and
+`deploy-production.yml` uploads the Workers. Both read the same setting names as `deploy.env` and
+`terraform.tfvars`, from the `production` GitHub Environment or repository-level variables and
+secrets (`SANDBOX_PROVIDER` may live on the Environment). Nothing uploads `deploy.env` for the user:
+walk through entering each value in GitHub, as the Variables/Secrets split in
+`docs/GETTING_STARTED.md` describes.
+
+Create the `production` GitHub Environment first (repo Settings → Environments):
+`gh secret set --env` fails while it does not exist. Do not add required reviewers to it: Terraform
+and the deploy run on every merge, and reviewers would hold each of those jobs for approval. Then
+copy the Terraform-generated secrets into it once, from the repository root:
+
+```bash
+node scripts/cloudflare-deploy/sync-generated-secrets.mjs --environment production
+```
+
 ## Error Handling
 
 - **"redirect_uri is not associated"**: Callback URL mismatch - update GitHub App settings
-- **Durable Object errors**: Must follow two-phase deployment
-- **"At least one access control allowlist must be configured"**: Set an appropriate `allowed_*`
-  Terraform value or the explicit Phase 1 open-access choice; check Step 5 of
-  `docs/GETTING_STARTED.md` and the corresponding CI variables/secrets.
+- **Service binding errors on first deploy**: Deploy with `ENABLE_SERVICE_BINDINGS=false`, then
+  `true`
+- **"At least one access control allowlist must be configured"**: Set an appropriate `ALLOWED_*`
+  deploy value or the explicit Phase 1 open-access choice; check Step 5 of `docs/GETTING_STARTED.md`
+  and the corresponding CI variables/secrets.
+- **"KV namespaces not found" or "D1 database ... was not found"**: Terraform has not provisioned
+  this deployment yet, or `DEPLOYMENT_NAME` differs from `deployment_name`. Run `terraform apply`
+  first and make the two match.
+- **"Terraform-generated secrets are not in the environment"**: add the values from
+  `terraform -chdir=terraform/environments/production output -json generated_worker_secrets` to
+  `deploy.env` (or run the sync script for CI).
+- **"The ... sandbox artifact ... was not found"**: the Terraform apply that builds it has not
+  finished or failed; rerun `terraform apply`, and check the shared values in Phase 7 match.
 - **Queue creation or binding permission errors**: Grant Account | Queues | Edit to the Cloudflare
   API token and rerun `terraform apply`.
 - **Slack bot not responding**: Check Event Subscriptions URL verified, bot invited to channel,
   reinstall if scopes changed
-- **GitHub bot not responding**: Check webhook URL, secret, `enable_github_bot = true`, and
-  `github_bot_username` matches the App's bot login
+- **GitHub bot not responding**: Check webhook URL, secret, `ENABLE_GITHUB_BOT=true`, and
+  `GH_BOT_USERNAME` matches the App's bot login
+
 - **Vercel build fails**: Terraform configures the monorepo build commands automatically
-- **"no such file or directory" for dist/index.js**: Build workers before Terraform:
-  `npm run build -w @open-inspect/control-plane -w @open-inspect/slack-bot -w @open-inspect/github-bot`
-- **Worker deployment fails**: Build shared package first: `npm run build -w @open-inspect/shared`
+- **Worker deployment fails**: Rerun the deploy with `--dry-run` to check its settings; with
+  `--skip-build`, build `@open-inspect/shared` and the Worker packages first
 
 ## Important Notes
 
 - Track all collected credentials securely throughout the process
-- Never log sensitive values
+- Never log sensitive values, and never commit `deploy.env`
 - The callback URL MUST match the actual deployed web app URL
-- Two-phase Terraform deployment is required due to Cloudflare Durable Object constraints
+- The first Cloudflare deploy uses `ENABLE_SERVICE_BINDINGS=false`, then `true`, because the bots
+  and control plane bind each other

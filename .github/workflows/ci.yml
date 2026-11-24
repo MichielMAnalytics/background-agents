@@ -6,7 +6,7 @@ on:
     paths:
       - ".env.example"
       - ".github/workflows/ci.yml"
-      - ".github/workflows/terraform.yml"
+      - ".github/workflows/terraform-cloudflare.yml"
       - ".nvmrc"
       - ".prettierignore"
       - ".prettierrc"
@@ -27,9 +27,14 @@ on:
       - "packages/web/**"
       - "scripts/**"
       - "terraform/d1/migrations/**"
-      # Unit tests hold the Worker's cron triggers and queue consumers equal
-      # to what Terraform declares, so a Terraform-only change must run them.
-      - "terraform/environments/production/**"
+      # Contract tests hold the Terraform roots' variables and the workflow
+      # path lists equal to what scripts/cloudflare-deploy expects.
+      - "terraform/environments/**"
+      - "terraform/modules/cloudflare-environment/**"
+      - ".github/workflows/terraform-*.yml"
+      - ".github/workflows/deploy-cloudflare.yml"
+      - ".github/workflows/deploy-production.yml"
+      - ".github/workflows/deploy-staging.yml"
       - "vitest.config.ts"
       - "!**/*.md"
       # Keep README translation checks active for documentation-only changes.
@@ -47,7 +52,7 @@ on:
     paths:
       - ".env.example"
       - ".github/workflows/ci.yml"
-      - ".github/workflows/terraform.yml"
+      - ".github/workflows/terraform-cloudflare.yml"
       - ".nvmrc"
       - ".prettierignore"
       - ".prettierrc"
@@ -68,9 +73,14 @@ on:
       - "packages/web/**"
       - "scripts/**"
       - "terraform/d1/migrations/**"
-      # Unit tests hold the Worker's cron triggers and queue consumers equal
-      # to what Terraform declares, so a Terraform-only change must run them.
-      - "terraform/environments/production/**"
+      # Contract tests hold the Terraform roots' variables and the workflow
+      # path lists equal to what scripts/cloudflare-deploy expects.
+      - "terraform/environments/**"
+      - "terraform/modules/cloudflare-environment/**"
+      - ".github/workflows/terraform-*.yml"
+      - ".github/workflows/deploy-cloudflare.yml"
+      - ".github/workflows/deploy-production.yml"
+      - ".github/workflows/deploy-staging.yml"
       - "vitest.config.ts"
       - "!**/*.md"
       # Keep README translation checks active for documentation-only changes.
@@ -143,6 +153,9 @@ jobs:
 
       - name: Test Terraform workflow contract
         run: npm run test:terraform-workflow-contract
+
+      - name: Test Cloudflare deploy
+        run: npm run test:cloudflare-deploy
 
       - name: Test managed base snapshot retention
         run: npm run test:base-snapshot-retention

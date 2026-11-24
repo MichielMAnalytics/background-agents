@@ -78,13 +78,13 @@ Callback context is message-scoped rather than inherited by the control plane. A
 queues a follow-up must attach it again; otherwise the control plane has no safe callback
 destination and intentionally skips completion delivery.
 
-## Terraform Variables
+## Deploy Settings
 
-| Variable                | Description                     |
+| Setting                 | Description                     |
 | ----------------------- | ------------------------------- |
-| `linear_client_id`      | OAuth Application Client ID     |
-| `linear_client_secret`  | OAuth Application Client Secret |
-| `linear_webhook_secret` | Webhook Signing Secret          |
+| `LINEAR_CLIENT_ID`      | OAuth Application Client ID     |
+| `LINEAR_CLIENT_SECRET`  | OAuth Application Client Secret |
+| `LINEAR_WEBHOOK_SECRET` | Webhook Signing Secret          |
 
-The old `linear_api_key` variable is optional and retained only for backward compatibility. It is
-not included in the tfvars example and is not used for normal Agent API delivery.
+The `LINEAR_API_KEY` setting is optional and retained only for backward compatibility. It is a
+comment-posting fallback and is not used for normal Agent API delivery.

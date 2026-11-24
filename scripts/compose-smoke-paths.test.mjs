@@ -55,7 +55,10 @@ const unrelated = [
   ".github/workflows/ci.yml",
   ".github/workflows/ci-python.yml",
   ".github/workflows/deploy-web.yml",
-  ".github/workflows/terraform.yml",
+  ".github/workflows/terraform-production.yml",
+  ".github/workflows/terraform-cloudflare.yml",
+  ".github/workflows/deploy-cloudflare.yml",
+  ".github/workflows/deploy-staging.yml",
   "eslint.config.js",
   "knip.json",
   "ruff.toml",
@@ -70,7 +73,7 @@ const unrelated = [
   "scripts/cf-logs.ts",
   "scripts/check-aws-stack.sh",
   "scripts/d1-migrate.sh",
-  "scripts/wrangler-secrets.sh",
+  "scripts/cloudflare-deploy/deploy.mjs",
 ];
 
 const required = [

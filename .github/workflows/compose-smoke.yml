@@ -83,7 +83,10 @@ jobs:
             ':(exclude).github/workflows/ci.yml'
             ':(exclude).github/workflows/ci-python.yml'
             ':(exclude).github/workflows/deploy-web.yml'
-            ':(exclude).github/workflows/terraform.yml'
+            ':(exclude,glob).github/workflows/terraform-*.yml'
+            ':(exclude).github/workflows/deploy-cloudflare.yml'
+            ':(exclude).github/workflows/deploy-production.yml'
+            ':(exclude).github/workflows/deploy-staging.yml'
             ':(exclude)eslint.config.js'
             ':(exclude)knip.json'
             ':(exclude)ruff.toml'
@@ -97,7 +100,7 @@ jobs:
             ':(exclude)scripts/cf-logs.ts'
             ':(exclude)scripts/check-aws-stack.sh'
             ':(exclude)scripts/d1-migrate.sh'
-            ':(exclude)scripts/wrangler-secrets.sh'
+            ':(exclude)scripts/cloudflare-deploy'
           )
           # Unknown paths and unavailable comparisons run smoke. No rename
           # detection: moving an input into an unrelated directory must run it.

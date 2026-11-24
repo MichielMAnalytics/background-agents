@@ -1,8 +1,16 @@
 # =============================================================================
-# Open-Inspect - Production Terraform Variables
+# Open-Inspect - Cloudflare Environment Terraform Variables
 # =============================================================================
 # Copy this file to terraform.tfvars and fill in the values.
 # NEVER commit terraform.tfvars to source control!
+#
+# Terraform provisions infrastructure only: D1, KV, R2, Queues, the Worker
+# scripts (without code), Vercel projects and sandbox artifacts. Worker code
+# and configuration -- sign-in providers, allowlists, bot credentials, the
+# classifier, encryption keys, timeouts and custom domains -- are deployed by
+# scripts/cloudflare-deploy/deploy.mjs from the settings in
+# scripts/cloudflare-deploy/deploy.env.example. Values for those settings left
+# in an older terraform.tfvars only produce "undeclared variable" warnings.
 #
 # Alternatively, set values via environment variables:
 #   export TF_VAR_cloudflare_api_token="your-token"
@@ -26,18 +34,6 @@ cloudflare_api_token = ""
 
 # Cloudflare account ID (found in dashboard URL or account overview)
 cloudflare_account_id = ""
-
-# Cloudflare zone ID (optional, only needed for custom domains)
-# In the Cloudflare dashboard, open the domain's Overview and use "Copy zone ID".
-# cloudflare_zone_id = ""
-
-# Custom domain (hostname) for the Cloudflare web Worker (optional).
-# Only used when web_platform = "cloudflare". Requires cloudflare_zone_id above
-# and a zone you control. Cloudflare provisions the DNS record + edge cert and
-# the web app URL becomes https://<this-hostname> instead of the workers.dev URL
-# (the workers.dev route is disabled). Remember to update the GitHub/Google
-# OAuth callback URLs to the new hostname.
-# cloudflare_custom_domain = "" # e.g., "app.example.com"
 
 # Cloudflare Workers subdomain (found in Workers & Pages -> Overview, bottom-right of panel)
 # This is the subdomain used for workers.dev URLs (e.g., "myaccount" in "worker.myaccount.workers.dev")
@@ -82,10 +78,6 @@ daytona_api_key = ""           # Requires Sandboxes (Read/Write) + Snapshots (Re
 daytona_base_snapshot = ""     # Prefix for the Terraform-managed Daytona snapshot
 # daytona_base_snapshot_memory_gib = 2 # Memory inherited by sandboxes created from the snapshot
 # daytona_target = ""          # Optional Daytona target name
-# daytona_toolbox_api_url = "" # Optional override; empty uses the proxy each sandbox reports
-# Admits new Daytona prebuilt-image builds and lets fresh sessions boot from one; closing it
-# again is the rollback. Clear the gates in docs/IMAGE_PREBUILD.md#daytona-prebuilds first.
-daytona_prebuilds_enabled = false
 
 # Vercel Sandbox API
 # Only required when sandbox_provider = "vercel"
@@ -96,7 +88,6 @@ vercel_sandbox_project_id = "" # e.g., "prj_xxxxxxxxxxxxxxxxxxxx"
 # vercel_sandbox_api_base_url = "" # Optional API override for advanced testing
 # vercel_base_snapshot_id = "" # Optional manual override; skips Terraform-managed snapshot builds
 # vercel_sandbox_runtime  = "node24"
-# vercel_snapshot_expiration_ms = 0
 
 # E2B
 # Only required when sandbox_provider = "e2b"
@@ -107,11 +98,8 @@ vercel_sandbox_project_id = "" # e.g., "prj_xxxxxxxxxxxxxxxxxxxx"
 e2b_api_key = ""               # sensitive — runtime REST API key (also auths the build)
 e2b_template_id = ""           # e.g., "open-inspect-sandbox"
 # e2b_api_url = "https://api.e2b.app"
-# Sandbox TTL. Default 7200 (paid plans); on a plan with a ~1h cap, set 3300.
-# e2b_sandbox_timeout_seconds = 3300
-# Auto-pause makes a lapsed TTL recoverable (pause, not kill) and auto-resumes the
-# sandbox on inbound activity. Default true; set false to kill on timeout.
-# e2b_auto_pause = true
+# e2b_template_cpu = 2         # Must match E2B_TEMPLATE_CPU for the deploy
+# e2b_template_memory_mb = 4096 # Must match E2B_TEMPLATE_MEMORY_MB for the deploy
 
 # Boat
 # Only required when sandbox_provider = "boat"
@@ -122,8 +110,8 @@ e2b_template_id = ""           # e.g., "open-inspect-sandbox"
 # sandboxes deploy from). 1-46 lowercase letters, digits or dashes.
 # Base prefixes oi-img and oi-img-* are reserved for prebuilt images and rejected.
 # Use a unique prefix per deployment sharing a Boat account or organization wallet
-# to avoid deleting another deployment's live base. After the Worker switches,
-# Terraform prunes exact <prefix>-<16 lowercase hex> names, retaining the deployed
+# to avoid deleting another deployment's live base. After the control plane
+# deploys, the Cloudflare deploy prunes exact <prefix>-<16 lowercase hex> names, retaining the deployed
 # base and the base it actually replaced, using confirmed Worker deployment history.
 # Snapshot name, API URL or organization changes trigger cleanup, not credentials alone.
 # Saving snapshots, manual names and other scopes are untouched.
@@ -133,199 +121,43 @@ boat_base_snapshot = ""        # e.g., "open-inspect"
 # boat_api_url = "https://boat.dev/api/v1"
 # boat_org = ""                # Optional organization wallet; empty uses the active one.
 #                              # Sandboxes are created private, whatever its default.
-# Machine size for sessions that request no CPU or memory; a request picks the
-# smallest size that fits it. One of small, default, large, xlarge.
-# boat_sandbox_type = "default"
 
 # =============================================================================
-# GitHub App Credentials
+# Bots
 # =============================================================================
-# Create GitHub App at: https://github.com/settings/apps
-#
-# A GitHub App installation is required for repository access in every
-# deployment. Its OAuth client ID and secret are optional together: configure
-# them for GitHub sign-in, or leave both empty for Google-only sign-in.
-# See docs/GETTING_STARTED.md for the supported combinations.
-#
-# Always required for repository access:
-# - App ID, PKCS#8 private key, and installation ID
-#
-# Optional pair for GitHub sign-in:
-# - Client ID and client secret from the GitHub App settings page
+# Each enabled bot gets a Worker script, a KV namespace and its queues. Keep
+# these equal to ENABLE_*_BOT in the deploy settings; the bots' credentials and
+# models are deploy settings.
 
-# GitHub OAuth sign-in pair (set both or leave both empty)
-github_client_id = ""      # e.g., "Iv1.abc123..."
-github_client_secret = ""
-
-# Repository-access App credentials (always required)
-github_app_id = ""
-
-# Private key in PKCS#8 format
-# Convert from PKCS#1: openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in key.pem -out key-pkcs8.pem
-github_app_private_key = <<-EOF
------BEGIN PRIVATE KEY-----
-... your private key here ...
------END PRIVATE KEY-----
-EOF
-
-github_app_installation_id = ""
-
-# Optional second App to submit reviews, so PRs opened by the main App can be
-# approved. Install it on the reviewed repositories with only Pull requests:
-# Read & write. Disable its webhooks. Set all four together or leave all empty.
-github_reviewer_app_id              = ""
-github_reviewer_app_private_key     = "" # PKCS#8 PEM
-github_reviewer_app_installation_id = ""
-github_reviewer_username            = "" # e.g., my-reviewer[bot]
-
-# GitHub Bot (Optional)
-# Set enable_github_bot = true to deploy the GitHub bot worker for PR reviews
-# and @mention commands. Requires github_webhook_secret and github_bot_username.
+enable_slack_bot  = false
 enable_github_bot = false
-
-# Shared secret for verifying GitHub webhook signatures
-# Generate with: openssl rand -hex 32
-# Configure the same value in your GitHub App's webhook settings.
-github_webhook_secret = ""
-
-# GitHub App bot username for @mention detection
-# This is the GitHub App's slug (the name in its profile URL) with the literal
-# "[bot]" suffix that GitHub appends to all GitHub App accounts.
-# Find it at: https://github.com/apps/<your-app-slug> — the slug is the last
-# path segment. The bot's commits/comments will appear as "<slug>[bot]".
-# Examples:
-#   App named "Open Inspect"     -> slug "open-inspect"     -> "open-inspect[bot]"
-#   App named "Acme Code Review" -> slug "acme-code-review" -> "acme-code-review[bot]"
-# The webhook handler uses this to detect @mentions of the bot in PRs/issues.
-github_bot_username = ""
-
-# Model the GitHub bot uses for a repository that does not pin one in its own
-# integration config. Accepts a canonical "provider/model" id or a bare
-# "claude-"/"gpt-" id. Commented out means the default below.
-# github_bot_default_model = "anthropic/claude-haiku-4-5"
-
-# =============================================================================
-# Google OAuth Credentials (Optional)
-# =============================================================================
-# Enables "Sign in with Google" for non-developer users (PMs, support agents).
-# Create an OAuth 2.0 Client ID at: https://console.cloud.google.com/apis/credentials
-#   - Application type: Web application
-#   - Authorized redirect URI: {your-web-app-url}/api/auth/callback/google
-#   - Consent screen scopes: openid, email, profile (non-sensitive — no Google review)
-# Set BOTH values to enable Google login. GitHub OAuth may be enabled as well or
-# left empty for Google-only sign-in.
-# Pair with allowed_emails / allowed_email_domains below to control who may sign in.
-google_client_id = ""
-google_client_secret = ""
-
-# =============================================================================
-# Slack App Credentials (Optional)
-# =============================================================================
-# From Slack App dashboard: https://api.slack.com/apps
-# Set enable_slack_bot = false to skip deployment.
-
-enable_slack_bot = false
-
-slack_bot_token = ""       # e.g., "xoxb-..."
-slack_signing_secret = ""
-
-# Model the Slack bot uses for a user who has not picked one from the model
-# menu. Accepts a canonical "provider/model" id or a bare "claude-"/"gpt-" id.
-# slack_bot_default_model = "claude-haiku-4-5"
-
-# Linear Agent (Optional)
-# Create an OAuth Application at: https://linear.app/settings/api/applications/new
-# - Enable webhooks, select "Agent session events" + "Issues" + "Comments"
-# - Set Callback URL to: https://<linear-bot-worker-url>/oauth/callback
-# - Set Webhook URL to: https://<linear-bot-worker-url>/webhook
-# - Enable scopes: read, write, app:assignable, app:mentionable
-# - Enable "Client credentials tokens" before installing or upgrading the agent
-# After creation, note the Client ID, Client Secret, and Webhook Signing Secret.
-# Then visit https://<linear-bot-worker-url>/oauth/authorize to install the agent
-# in your workspace (requires admin permissions).
-# Existing eligible installations do not need to be reinstalled. After enabling client
-# credentials, the first request mints and verifies a runtime token automatically.
-# Leave empty to disable Linear integration.
-
 enable_linear_bot = false
-
-linear_client_id = ""        # OAuth Application Client ID
-linear_client_secret = ""    # OAuth Application Client Secret
-linear_webhook_secret = ""   # Webhook Signing Secret from the application config
-
-# Model the Linear bot uses when no repository config, user preference, or
-# "model:" issue label selects one. Accepts a canonical "provider/model" id or a
-# bare "claude-"/"gpt-" id.
-# linear_bot_default_model = "claude-sonnet-4-6"
 
 # =============================================================================
 # API Keys
 # =============================================================================
 
-# Anthropic API key for Claude. Injected into Modal session sandboxes; Daytona,
-# E2B and Vercel read model keys only from the secret store in the web app, which overrides this value everywhere. Optional:
-# leave it blank to supply model credentials as secrets instead. Required only
-# when classification_model names an Anthropic model AND at least one of the
-# Slack or Linear bots is enabled. Both of those are the defaults, so a stock
-# configuration does need this key.
-# From: https://console.anthropic.com/
+# Anthropic API key injected into Modal session sandboxes. Daytona, E2B and
+# Vercel read model keys only from the secret store in the web app, which
+# overrides this value everywhere. Optional: leave blank to supply model
+# credentials as secrets instead. (The deploy also uses ANTHROPIC_API_KEY for
+# the Slack/Linear classifier unless CLASSIFICATION_ANTHROPIC_API_KEY is set.)
 anthropic_api_key = ""
-
-# Anthropic credential used only by the Slack/Linear bot classifiers; never
-# injected into sandboxes. Falls back to anthropic_api_key when blank. Set this
-# and leave anthropic_api_key blank to keep the classifier key out of sandboxes.
-# classification_anthropic_api_key = ""
-
-# OpenAI credential for the Slack/Linear bot classifiers. Required when
-# classification_model names an OpenAI model AND at least one of the Slack or
-# Linear bots is enabled; an Anthropic classifier model is served by
-# classification_anthropic_api_key or anthropic_api_key above.
-# From: https://platform.openai.com/api-keys
-classification_openai_api_key = ""
-
-# Amazon Bedrock API key for the Slack/Linear bot classifiers. Required when
-# classification_model is a "bedrock/<aws-region>/<inference-profile-id>" id AND
-# at least one of the Slack or Linear bots is enabled. For the key type and IAM
-# permissions, see "Classify on Amazon Bedrock (Optional)" in
-# docs/GETTING_STARTED.md.
-# classification_bedrock_api_key = ""
-
-# Model backing the Slack/Linear bot classifiers. A "claude-"/"anthropic/" id is
-# served by classification_anthropic_api_key or anthropic_api_key; a
-# "gpt-"/"openai/" id by classification_openai_api_key; a
-# "bedrock/<aws-region>/<inference-profile-id>" id by
-# classification_bedrock_api_key, through Claude in Amazon Bedrock in that Region.
-# classification_model = "claude-haiku-4-5"
-# classification_model = "bedrock/us-east-1/us.anthropic.claude-haiku-4-5-20251001-v1:0"
-
-# Reasoning effort for an OpenAI classification_model, sent as reasoning_effort.
-# Leave blank to use the model's default. Not supported for Anthropic or Bedrock
-# models.
-# classification_reasoning_effort = "low"
 
 # =============================================================================
 # Security Secrets
 # =============================================================================
-# Generate these with: openssl rand -base64 32
-
-# Token encryption key (for encrypting OAuth tokens)
-token_encryption_key = ""
-
-# Repo secrets encryption key (for encrypting repo secrets in D1)
-repo_secrets_encryption_key = ""
-
 # Optional existing provider account credential encryption key. Leave blank for
 # Terraform to generate and persist a dedicated key. Never change this after
-# storing provider account credentials.
+# storing provider account credentials. The deploy reads the effective value
+# (see the generated_worker_secrets output) as PROVIDER_ACCOUNTS_ENCRYPTION_KEY.
 provider_accounts_encryption_key = ""
 
 # Modal API secret (for control plane -> Modal authentication)
 # Only required when sandbox_provider = "modal" or "modal-vm"
 # Generate with: openssl rand -hex 32
+# Must match MODAL_API_SECRET in the deploy settings.
 modal_api_secret = ""
-
-# Browser authentication secret (the Terraform input retains its legacy name)
-nextauth_secret = ""
 
 # =============================================================================
 # Configuration
@@ -368,7 +200,7 @@ project_root = "../../../"
 
 # Name of the R2 media bucket Terraform creates and manages (optional)
 # Defaults to "open-inspect-media-<deployment_name>" when left empty.
-# This selects the name of the managed cloudflare_r2_bucket.media resource; it
+# This selects the name of the managed module.environment.cloudflare_r2_bucket.media resource; it
 # does not select an externally managed bucket. Import a pre-created bucket into
 # state before applying. Changing the name of a bucket Terraform already manages
 # plans replacement, not an in-place rename, as described below.
@@ -387,9 +219,9 @@ project_root = "../../../"
 # Set r2_media_bucket_name to the pre-created bucket's name, then import it so
 # Terraform manages the bucket without trying to recreate it. Run from this
 # directory with the deployment's initialized backend, workspace, and variables.
-# If cloudflare_r2_bucket.media already tracks a bucket, use the migration below
+# If module.environment.cloudflare_r2_bucket.media already tracks a bucket, use the migration below
 # instead of importing over the occupied address:
-#   terraform import cloudflare_r2_bucket.media <cloudflare_account_id>/<bucket-name>/default
+#   terraform import module.environment.cloudflare_r2_bucket.media <cloudflare_account_id>/<bucket-name>/default
 #
 # WARNING - changing an existing Terraform-managed bucket's name:
 # Terraform plans to delete the old bucket and create a new one. It does not empty
@@ -405,11 +237,11 @@ project_root = "../../../"
 #   3. Set r2_media_bucket_name to the destination name in local variables and in
 #      the CI configuration (R2_MEDIA_BUCKET_NAME) if CI manages the deployment.
 #   4. Replace the occupied state entry; do not plan/apply between these commands:
-#        terraform state rm cloudflare_r2_bucket.media
-#        terraform import cloudflare_r2_bucket.media <cloudflare_account_id>/<new-bucket-name>/default
+#        terraform state rm module.environment.cloudflare_r2_bucket.media
+#        terraform import module.environment.cloudflare_r2_bucket.media <cloudflare_account_id>/<new-bucket-name>/default
 #      If import fails, resolve it before any apply; the address is now untracked.
 #   5. Run terraform plan and confirm the destination bucket is not being created,
-#      replaced, or deleted. Apply the Worker binding change, verify media access,
+#      replaced, or deleted. Apply, then run the Cloudflare deploy so the Worker binds the new bucket (R2_MEDIA_BUCKET_NAME), verify media access,
 #      then resume writes and automated applies.
 # The old bucket and its objects remain, but are no longer managed by Terraform.
 # Retain or clean them up separately only after verifying the cutover.
@@ -421,65 +253,5 @@ project_root = "../../../"
 #   - Workers R2 Storage: Edit for bucket creation, updates, or deletion. An imported
 #     bucket still requires bucket read access for imports and Terraform refresh;
 #     Read alone is sufficient only while no bucket changes are planned.
-#   - Workers Scripts: Edit (to attach the MEDIA_BUCKET binding to the Worker)
+#   - Workers Scripts: Edit (for the deploy to attach the MEDIA_BUCKET binding)
 # r2_media_bucket_name = ""
-
-# =============================================================================
-# Initial Deployment Flags
-# =============================================================================
-# For first-time deployment, set both to false to avoid chicken-and-egg issues
-# with Durable Objects and service bindings.
-# After the first successful deployment, set both to true and run terraform apply again.
-
-enable_durable_object_bindings = false
-enable_service_bindings = false
-
-# Override these only for an explicit Durable Object migration. The production
-# workflow stages the SchedulerDO v2-to-v3 deletion only when state is still v2.
-# control_plane_migration_tag = "v1"
-# control_plane_migration_old_tag = null
-# control_plane_new_sqlite_classes = []
-# control_plane_deleted_classes = []
-
-# =============================================================================
-# Access Control
-# =============================================================================
-# Allowlists are OR-based: a user is admitted if they match ANY configured
-# allowlist (GitHub username, email domain, exact email, or GitHub org
-# membership). Set at least one unless you intentionally opt into open access
-# with unsafe_allow_all_users = true.
-# These are deployment baseline rules, additive with SQL-managed rules in
-# Settings > Workspace access > Who can sign in. The UI cannot narrow this
-# baseline, and Terraform changes do not remove managed grants. Keep a compatible
-# deployment baseline for every enabled provider; managed rules do not satisfy
-# Terraform safety checks. Prefer a known valid recovery admin email below.
-# Google needs email/domain rules; GitHub also supports username/org rules.
-# Managed limits: 50 total rules, 10 orgs, 64-KiB requests (not baseline limits).
-
-# Comma-separated list of GitHub usernames allowed to sign in
-allowed_users = ""
-
-# Comma-separated list of email domains allowed to sign in (matches any
-# provider's verified email; exact domains, not subdomains). Example: "example.com,corp.io"
-allowed_email_domains = ""
-
-# Comma-separated list of exact email addresses allowed to sign in. Use this for
-# individual users on shared domains (e.g. one person@gmail.com) where a domain
-# allowlist would admit too many. Example: "pm@gmail.com,agent@gmail.com"
-allowed_emails = ""
-
-# Comma-separated list of GitHub organizations whose active members can sign in.
-# Checks membership with the signing-in user's token; rules request no new OAuth
-# scopes or read:org. Removing a rule does not revoke existing browser sessions;
-# use Members > Suspend for revocation. Verified GitHub email is still required.
-# Requires GitHub App Organization permissions: Members read-only; existing apps
-# must republish/request approval after this permission changes.
-allowed_github_orgs = ""
-
-# Explicit unsafe opt-in: any otherwise valid provider identity may sign in ONLY
-# when all effective deployment AND managed lists are empty. Nonempty rules still
-# apply. The editor is read-only whenever this flag is true, even when dormant.
-# For old-code rollback: stop deployments/control automatic rollback, copy the
-# managed rules from Settings, union them with the ACTUAL deployed baseline,
-# deploy that union with this flag false, and verify it before rollback.
-unsafe_allow_all_users = false

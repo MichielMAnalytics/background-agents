@@ -1,4 +1,4 @@
-// Test-only config. Production deployment is managed via Terraform.
+// Test-only config. Production deployment uses the config scripts/cloudflare-deploy generates.
 {
   "name": "open-inspect-control-plane-test",
   "main": "src/index.ts",

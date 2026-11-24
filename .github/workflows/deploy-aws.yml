@@ -1,7 +1,8 @@
 # Deploys the control-plane image to an AWS instance, and puts the previous one
 # back if the new one does not come up.
 #
-# The Cloudflare deploy is `terraform apply` from terraform.yml. This is the
+# The Cloudflare deploy is deploy-cloudflare.yml (Wrangler). This is the
+
 # equivalent for the AWS environments, and deliberately not the same shape: no
 # Terraform runs here. The image is built and pushed, the deployed-version SSM
 # parameter is moved, and the instance activates it over SSM Session Manager's

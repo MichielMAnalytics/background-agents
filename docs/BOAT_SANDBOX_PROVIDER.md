@@ -14,7 +14,8 @@ sandbox back on a new machine with its files intact.
 
 ## Required Configuration
 
-Set these values in `terraform/environments/production/terraform.tfvars`:
+Terraform builds the snapshot, so set these values in
+`terraform/environments/production/terraform.tfvars`:
 
 ```hcl
 sandbox_provider = "boat"
@@ -23,9 +24,20 @@ boat_api_key       = "boat_..."      # from the Boat dashboard → API keys
 boat_base_snapshot = "open-inspect"  # prefix of the saved snapshot to build/use
 
 # Optional
-# boat_api_url      = "https://boat.dev/api/v1" # REST API base URL
-# boat_org          = ""                        # organization wallet; empty = active wallet
-# boat_sandbox_type = "default"                 # machine size when a session requests no resources
+# boat_api_url = "https://boat.dev/api/v1" # REST API base URL
+# boat_org     = ""                        # organization wallet; empty = active wallet
+```
+
+The Cloudflare deploy configures the control plane and prunes snapshots, so set the same values in
+its `deploy.env` (see [GETTING_STARTED.md](./GETTING_STARTED.md#configure-deployenv)):
+
+```bash
+SANDBOX_PROVIDER=boat
+BOAT_API_KEY=boat_...
+BOAT_BASE_SNAPSHOT=open-inspect
+# BOAT_API_URL=https://boat.dev/api/v1
+# BOAT_ORG=
+# BOAT_SANDBOX_TYPE=default   # machine size when a session requests no resources (deploy only)
 ```
 
 For GitHub Actions-based deployment, configure the matching repository secrets and variables:
@@ -96,13 +108,13 @@ verification. There are two supported paths.
 
 ### Terraform-Managed Snapshot
 
-This is the recommended path for a normal deployment. When `sandbox_provider = "boat"`, the
-production `boat.tf` computes the build-input hash through the `sandbox-images` CLI, covering the
-runtime, image package, Boat builder and Terraform module. It passes that hash to
-`terraform/modules/boat-infra`, which builds a new snapshot under a new name on `terraform apply`
-when those inputs change. The control-plane Worker switches to the new name only after the build has
-verified it, then Terraform prunes superseded bases (see
-[Base Snapshot Pruning](#base-snapshot-pruning)).
+This is the recommended path for a normal deployment. When `sandbox_provider = "boat"`, the shared
+environment module's `boat.tf` (`terraform/modules/cloudflare-environment/boat.tf`) computes the
+build-input hash through the `sandbox-images` CLI, covering the runtime, image package, Boat builder
+and Terraform module. It passes that hash to `terraform/modules/boat-infra`, which builds a new
+snapshot under a new name on `terraform apply` when those inputs change. The control-plane Worker
+switches to the new name, on the next Cloudflare deploy, only after the build has verified it; that
+deploy then prunes superseded bases (see [Base Snapshot Pruning](#base-snapshot-pruning)).
 
 ```bash
 cd terraform/environments/production
@@ -134,12 +146,11 @@ prebuilt images share the allowance.
 
 ### Base Snapshot Pruning
 
-After the control-plane Worker switches to the selected base, Terraform runs
-`packages/boat-infra/prune-deployed-snapshots.py`. Changes to the selected snapshot name, Boat API
-URL or organization trigger cleanup, even with an unchanged build hash; credentials alone do not. It
-also runs on the first apply after the pruning resource is introduced, not on every unchanged apply.
-If pruning fails, the Worker stays switched and the next apply retries cleanup. Switching away from
-Boat does not delete base snapshots.
+After the control plane deploys, the Cloudflare deploy (`scripts/cloudflare-deploy/deploy.mjs`) runs
+`packages/boat-infra/prune-deployed-snapshots.py`. It runs on every deploy with
+`SANDBOX_PROVIDER=boat` and is idempotent: with nothing superseded, it deletes nothing. If pruning
+fails, the Worker stays switched and the next deploy retries cleanup. Switching away from Boat does
+not delete base snapshots.
 
 The wrapper reads Cloudflare's confirmed deployments and version bindings, verifies the expected
 active deployment and desired Boat snapshot, and follows actual deployed base transitions, skipping
@@ -154,13 +165,17 @@ untouched and there is no rollback base in the new scope. When pruning proceeds,
 two applicable bases, not necessarily two on a first deployment or scope change. Only exact
 `<prefix>-<16 lowercase hex>` names are candidates. The deployed base and any nonempty replaced base
 must both be `ready` names under that prefix; otherwise pruning fails without deleting anything.
-Pruning skips `saving` snapshots and deletes the remaining `ready` or `failed` candidates. Manual
+Pruning skips `saving` snapshots and deletes the remaining `ready` or `failed` candidates, except
+that a `ready` base younger than a few hours (`PRUNE_GRACE_SECONDS` in `build-template.py`), or one
+with no usable creation time, is kept: Terraform publishes a base before the deploy that binds it
+runs, and the two workflows are not serialized, so a prune for an earlier deploy must not delete a
+base a concurrent apply just published. It is pruned by a later deploy once it is older. Manual
 names (`<prefix>-<12 hex>-<timestamp>`), prebuilt images, other names and snapshots under other or
 longer prefixes are untouched.
 
 The wrapper needs Cloudflare Workers Scripts: Read access; the existing Workers Scripts: Edit
-deployment token is sufficient. Terraform supplies the token, account, Worker name and deployment ID
-automatically, so no additional manual setup is needed.
+deployment token is sufficient. The deploy supplies the token, account, Worker name and deployment
+ID automatically, so no additional manual setup is needed.
 
 Serialize deployments, direct Worker rollbacks and pruning. The wrapper rechecks the active
 deployment after reading history, but cannot atomically lock Cloudflare and Boat.
@@ -211,7 +226,7 @@ runtime the same way Open-Inspect does on every other provider:
 Machine size follows the session's sandbox settings: a `cpuCores`/`memoryMib` request selects the
 smallest Boat size that satisfies it (`small` 2 vCPU/4 GB, `default` 4/8, `large` 8/16, `xlarge`
 16/32; `xlarge` needs a Boat plan that offers it), and a session without a request uses
-`boat_sandbox_type`. The sandbox lifetime (`sandboxTimeoutMs`, default 2 hours) becomes Boat's
+`BOAT_SANDBOX_TYPE`. The sandbox lifetime (`sandboxTimeoutMs`, default 2 hours) becomes Boat's
 auto-stop TTL, clamped to Boat's bounds of one second to thirty days.
 
 Prebuilt repository and environment images are supported; see [Prebuilt images](#prebuilt-images).
@@ -251,9 +266,10 @@ works as on every other provider ([IMAGE_PREBUILD.md](./IMAGE_PREBUILD.md)). On 
   and a fresh boot; the runtime syncs the checkout and skips `setup.sh`
 
 Every image counts toward the wallet's saved-snapshot allowance together with the deployed and
-rollback base snapshots. Superseded images are deleted automatically, and Terraform prunes
-superseded bases after switching the Worker (see [Base Snapshot Pruning](#base-snapshot-pruning)).
-The [Boat prebuilds](./IMAGE_PREBUILD.md#boat-prebuilds) section covers the allowance, what a saved
+rollback base snapshots. Superseded images are deleted automatically, and the Cloudflare deploy
+prunes superseded bases after switching the Worker (see
+[Base Snapshot Pruning](#base-snapshot-pruning)). The
+[Boat prebuilds](./IMAGE_PREBUILD.md#boat-prebuilds) section covers the allowance, what a saved
 snapshot keeps (`/tmp` and `~/.cache` are not saved), why the build's env never reaches the image,
 and the runbook.
 
@@ -312,7 +328,7 @@ naming the limit.
 
 ## Verify
 
-After `terraform apply`, verify:
+After `terraform apply` and the Cloudflare deploy, verify:
 
 1. The control plane is healthy:
 

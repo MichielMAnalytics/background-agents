@@ -1,0 +1,52 @@
+name: Deploy Production
+
+# Deploys Worker code to the production Cloudflare environment with Wrangler
+# (scripts/cloudflare-deploy/deploy.mjs). Runs on pushes to DEPLOY_PATHS in
+# scripts/cloudflare-deploy/changes.mjs, and after every completed
+# "Terraform Production" run on main, so infrastructure a push adds or
+# rebuilds always exists before the code that uses it.
+#
+# Reads the same "production" GitHub Environment (and repository-level)
+# variables and secrets the Terraform workflow passed as TF_VAR_* before the
+# split, under the same names.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".nvmrc"
+      - "package-lock.json"
+      - "package.json"
+      - "packages/control-plane/**"
+      - "packages/github-bot/**"
+      - "packages/linear-bot/**"
+      - "packages/shared/**"
+      - "packages/slack-bot/**"
+      - "packages/web/**"
+      - "scripts/cloudflare-deploy/**"
+      - "scripts/d1-migrate.sh"
+      - "terraform/d1/migrations/**"
+      - ".github/workflows/deploy-cloudflare.yml"
+      - ".github/workflows/deploy-production.yml"
+  workflow_run:
+    workflows: ["Terraform Production"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read # the gate reads Terraform run and job status
+
+concurrency:
+  # One deploy per environment at a time, never cancelled mid-upload.
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    uses: ./.github/workflows/deploy-cloudflare.yml
+    with:
+      environment: production
+    secrets: inherit

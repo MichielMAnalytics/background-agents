@@ -13,27 +13,6 @@ variable "cloudflare_account_id" {
   type        = string
 }
 
-variable "cloudflare_zone_id" {
-  description = "Cloudflare zone ID (optional, for custom domains)"
-  type        = string
-  default     = null
-}
-
-variable "cloudflare_custom_domain" {
-  description = "Custom domain (hostname) to attach to the Cloudflare web Worker (optional). Requires web_platform = 'cloudflare' and cloudflare_zone_id. e.g. 'app.example.com'"
-  type        = string
-  default     = null
-
-  validation {
-    condition = (
-      var.cloudflare_custom_domain == null ||
-      trimspace(var.cloudflare_custom_domain) == "" ||
-      can(regex("(?i)^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$", var.cloudflare_custom_domain))
-    )
-    error_message = "cloudflare_custom_domain must be a bare hostname such as 'app.example.com' — no scheme, port, path, trailing dot, or whitespace."
-  }
-}
-
 variable "cloudflare_worker_subdomain" {
   description = "Cloudflare Workers account subdomain (e.g. 'myaccount' — .workers.dev is appended automatically)"
   type        = string
@@ -110,279 +89,28 @@ variable "modal_environment_web_suffix" {
 }
 
 # =============================================================================
-# GitHub OAuth Sign-In Credentials
+# Bots
 # =============================================================================
-
-variable "github_client_id" {
-  description = "GitHub App client ID used for OAuth sign-in. Set together with github_client_secret to enable GitHub sign-in; leave both empty for Google-only sign-in."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = (trimspace(var.github_client_id) == "") == (trimspace(var.github_client_secret) == "")
-    error_message = "github_client_id and github_client_secret must be set together with non-whitespace values, or both left empty."
-  }
-}
-
-variable "github_client_secret" {
-  description = "GitHub App client secret used for OAuth sign-in. Set together with github_client_id to enable GitHub sign-in."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-# =============================================================================
-# Google OAuth Credentials (Optional — enables "Sign in with Google")
-# =============================================================================
-# Set both google_client_id and google_client_secret to enable Google login for
-# non-developer users (PMs, support agents). Leave both empty when Google sign-in
-# is not wanted. A Google session authenticates the user but carries no SCM
-# credentials; git operations continue to use the shared GitHub App installation,
-# and PRs fall back to the App bot.
-
-variable "google_client_id" {
-  description = "Google OAuth 2.0 client ID. Set together with google_client_secret to enable Google login; leave both empty to keep the deployment GitHub-only."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = (trimspace(var.google_client_id) == "") == (trimspace(var.google_client_secret) == "")
-    error_message = "google_client_id and google_client_secret must be set together with non-whitespace values, or both left empty."
-  }
-}
-
-variable "google_client_secret" {
-  description = "Google OAuth 2.0 client secret. Required together with google_client_id."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-# =============================================================================
-# GitHub App Credentials (for Modal sandbox)
-# =============================================================================
-
-variable "github_app_id" {
-  description = "GitHub App ID"
-  type        = string
-}
-
-variable "github_app_private_key" {
-  description = "GitHub App private key (PKCS#8 format)"
-  type        = string
-  sensitive   = true
-}
-
-variable "github_app_installation_id" {
-  description = "GitHub App installation ID"
-  type        = string
-}
-
-# =============================================================================
-# GitHub Bot Configuration
-# =============================================================================
-
-variable "github_reviewer_app_id" {
-  description = "App ID of the second GitHub App whose token submits code reviews. Empty disables it."
-  type        = string
-  default     = ""
-}
-
-variable "github_reviewer_app_private_key" {
-  description = "Reviewer GitHub App private key (PKCS#8 format)"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "github_reviewer_app_installation_id" {
-  description = "Reviewer GitHub App installation ID"
-  type        = string
-  default     = ""
-}
+# Each enabled bot gets a Worker script, a KV namespace and its queues. Its
+# credentials and settings are Worker configuration, which the Cloudflare
+# deploy validates and uploads (scripts/cloudflare-deploy).
 
 variable "enable_github_bot" {
-  description = "Enable the GitHub bot worker. Requires github_webhook_secret and github_bot_username."
+  description = "Provision the GitHub bot Worker script, KV namespace and autofix queues. Must match ENABLE_GITHUB_BOT for the Cloudflare deploy."
   type        = bool
   default     = false
-
-  validation {
-    condition     = var.enable_github_bot == false || (length(var.github_webhook_secret) > 0 && length(var.github_bot_username) > 0)
-    error_message = "When enable_github_bot is true, github_webhook_secret and github_bot_username must be non-empty."
-  }
 }
-
-variable "github_webhook_secret" {
-  description = "Shared secret for verifying GitHub webhook signatures (generate with: openssl rand -hex 32)"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "github_bot_username" {
-  description = "GitHub App bot username for @mention detection (e.g., 'my-app[bot]')"
-  type        = string
-  default     = ""
-}
-
-variable "github_reviewer_username" {
-  description = <<-EOT
-    Login of the reviewer GitHub App (e.g., 'my-reviewer[bot]'). Set together with the
-    three github_reviewer_app_* values: the login decides whether a review may approve, the
-    credentials mint the token that submits it, and either one alone breaks every review.
-  EOT
-  type        = string
-  default     = ""
-
-  validation {
-    condition = (
-      (
-        length(trimspace(var.github_reviewer_username)) > 0 &&
-        length(trimspace(var.github_reviewer_app_id)) > 0 &&
-        length(trimspace(var.github_reviewer_app_private_key)) > 0 &&
-        length(trimspace(var.github_reviewer_app_installation_id)) > 0
-        ) || (
-        length(trimspace(var.github_reviewer_username)) == 0 &&
-        length(trimspace(var.github_reviewer_app_id)) == 0 &&
-        length(trimspace(var.github_reviewer_app_private_key)) == 0 &&
-        length(trimspace(var.github_reviewer_app_installation_id)) == 0
-      )
-    )
-    error_message = "Set github_reviewer_username and all three github_reviewer_app_* values together, or leave all four empty."
-  }
-}
-
-variable "github_bot_default_model" {
-  description = "Model the GitHub bot starts a session with when the repository's integration config does not pin one. A canonical \"provider/model\" id, or a bare \"claude-\"/\"gpt-\" id the bots normalize into that provider's namespace."
-  type        = string
-  default     = "anthropic/claude-haiku-4-5"
-  nullable    = false
-
-  # Each side of the id must name something, and name it without whitespace:
-  # "anthropic/", "claude-" and "/x" all pass a naive prefix or slash check
-  # while naming no model, and "anthropic/ claude-haiku-4-5" survives a
-  # trimspace check with the space still in the value. Either shape reaches the
-  # model provider verbatim. The same rule rejects a blank value, so an unset
-  # CI variable fails at plan time instead of deploying a bot that cannot start
-  # a session.
-  validation {
-    condition = can(regex(
-      "^(?:[^/[:space:]]+/[^/[:space:]]+|(?:claude-|gpt-)[^/[:space:]]+)$",
-      var.github_bot_default_model
-    ))
-    error_message = "github_bot_default_model must be a canonical \"provider/model\" id such as \"anthropic/claude-haiku-4-5\", or a bare \"claude-\"/\"gpt-\" id, naming a model with no whitespace on each side of any slash."
-  }
-}
-
-# =============================================================================
-# Slack App Credentials
-# =============================================================================
 
 variable "enable_slack_bot" {
-  description = "Enable the Slack bot worker. Set to false to skip deployment."
+  description = "Provision the Slack bot Worker script, KV namespace and completion queues. Must match ENABLE_SLACK_BOT for the Cloudflare deploy."
   type        = bool
   default     = true
-
-  validation {
-    condition     = var.enable_slack_bot == false || (length(var.slack_bot_token) > 0 && length(var.slack_signing_secret) > 0)
-    error_message = "When enable_slack_bot is true, slack_bot_token and slack_signing_secret must be non-empty."
-  }
 }
-
-variable "slack_bot_token" {
-  description = "Slack Bot OAuth token (xoxb-...)"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "slack_signing_secret" {
-  description = "Slack app signing secret"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "slack_bot_default_model" {
-  description = "Model the Slack bot starts a session with when the requesting user has no saved model preference. A canonical \"provider/model\" id, or a bare \"claude-\"/\"gpt-\" id the bots normalize into that provider's namespace."
-  type        = string
-  default     = "claude-haiku-4-5"
-  nullable    = false
-
-  # See github_bot_default_model: a prefix or slash with nothing after it names
-  # no model, whitespace anywhere in the id reaches the provider verbatim, and a
-  # blank value must fail at plan time rather than deploy.
-  validation {
-    condition = can(regex(
-      "^(?:[^/[:space:]]+/[^/[:space:]]+|(?:claude-|gpt-)[^/[:space:]]+)$",
-      var.slack_bot_default_model
-    ))
-    error_message = "slack_bot_default_model must be a canonical \"provider/model\" id such as \"anthropic/claude-haiku-4-5\", or a bare \"claude-\"/\"gpt-\" id, naming a model with no whitespace on each side of any slash."
-  }
-}
-
-# =============================================================================
-# Linear Agent Credentials
-# =============================================================================
 
 variable "enable_linear_bot" {
-  description = "Enable the Linear bot worker. Requires linear_client_id, linear_client_secret, and linear_webhook_secret."
+  description = "Provision the Linear bot Worker script and KV namespace. Must match ENABLE_LINEAR_BOT for the Cloudflare deploy."
   type        = bool
   default     = false
-
-  validation {
-    condition = var.enable_linear_bot == false || (
-      length(var.linear_client_id) > 0 &&
-      length(var.linear_client_secret) > 0 &&
-      length(var.linear_webhook_secret) > 0
-    )
-    error_message = "When enable_linear_bot is true, linear_client_id, linear_client_secret, and linear_webhook_secret must be non-empty."
-  }
-}
-
-variable "linear_client_id" {
-  description = "Linear OAuth Application Client ID (from Settings → API → Applications)"
-  type        = string
-  default     = ""
-}
-
-variable "linear_client_secret" {
-  description = "Linear OAuth Application Client Secret"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "linear_webhook_secret" {
-  description = "Linear webhook signing secret (from the OAuth Application config)"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "linear_api_key" {
-  description = "Linear API key for fallback comment posting"
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "linear_bot_default_model" {
-  description = "Model the Linear bot starts a session with when neither the repository's integration config, the requesting user's preference, nor a model label selects one. A canonical \"provider/model\" id, or a bare \"claude-\"/\"gpt-\" id the bots normalize into that provider's namespace."
-  type        = string
-  default     = "claude-sonnet-4-6"
-  nullable    = false
-
-  # See github_bot_default_model: a prefix or slash with nothing after it names
-  # no model, whitespace anywhere in the id reaches the provider verbatim, and a
-  # blank value must fail at plan time rather than deploy.
-  validation {
-    condition = can(regex(
-      "^(?:[^/[:space:]]+/[^/[:space:]]+|(?:claude-|gpt-)[^/[:space:]]+)$",
-      var.linear_bot_default_model
-    ))
-    error_message = "linear_bot_default_model must be a canonical \"provider/model\" id such as \"anthropic/claude-haiku-4-5\", or a bare \"claude-\"/\"gpt-\" id, naming a model with no whitespace on each side of any slash."
-  }
 }
 
 # =============================================================================
@@ -390,136 +118,19 @@ variable "linear_bot_default_model" {
 # =============================================================================
 
 variable "anthropic_api_key" {
-  description = "Deployment-wide Anthropic API key injected into Modal session sandboxes. Daytona, E2B and Vercel read model keys only from the scoped secret store, as do Modal image builds. Also serves the Slack and Linear bot classifiers when classification_anthropic_api_key is blank. Optional: leave blank to supply model credentials as scoped secrets, which override this value on every provider."
+  description = "Deployment-wide Anthropic API key injected into Modal session sandboxes. Daytona, E2B and Vercel read model keys only from the scoped secret store, as do Modal image builds. The Cloudflare deploy also binds it to the Slack and Linear bot classifiers when CLASSIFICATION_ANTHROPIC_API_KEY is blank. Optional: leave blank to supply model credentials as scoped secrets, which override this value on every provider."
   type        = string
   sensitive   = true
   default     = ""
   nullable    = false
-}
-
-variable "classification_anthropic_api_key" {
-  description = "Anthropic API key used specifically by the Slack and Linear bot classifiers; never injected into sandboxes. Falls back to anthropic_api_key when blank. Set this and leave anthropic_api_key blank to keep the classifier key out of sandboxes."
-  type        = string
-  sensitive   = true
-  default     = ""
-  nullable    = false
-
-  # Sandboxes tolerate a blank key — they fall back to the secret store — but a
-  # deployed Anthropic classifier has no such fallback. CI renders an unset
-  # secret as an empty string, which would otherwise deploy a credential-less
-  # classifier that rejects every message.
-  validation {
-    condition = (
-      (var.enable_slack_bot == false && var.enable_linear_bot == false) ||
-      local.classifier_provider != "anthropic" ||
-      trimspace(var.classification_anthropic_api_key) != "" ||
-      trimspace(var.anthropic_api_key) != ""
-    )
-    error_message = "classification_anthropic_api_key or anthropic_api_key must be non-blank when the Slack or Linear bot is enabled and classification_model is an Anthropic model."
-  }
-}
-
-variable "classification_model" {
-  description = "Model backing the Slack and Linear bots' target classifiers. An \"anthropic/\"-prefixed or bare \"claude-\" id is served by classification_anthropic_api_key (falling back to anthropic_api_key); an \"openai/\"-prefixed or bare \"gpt-\" id by classification_openai_api_key; a \"bedrock/<aws-region>/<inference-profile-id>\" id by classification_bedrock_api_key, through Claude in Amazon Bedrock in that Region."
-  type        = string
-  default     = "claude-haiku-4-5"
-  nullable    = false
-
-  # Reads the constant pattern table, not local.classifier_provider: a
-  # variable's validation that references a local derived from the same
-  # variable is a dependency cycle.
-  validation {
-    condition = anytrue([
-      for pattern in values(local.classifier_model_patterns) :
-      can(regex(pattern, var.classification_model))
-    ])
-    error_message = "classification_model must be an Anthropic id (\"anthropic/...\" or \"claude-...\") or an OpenAI id (\"openai/...\" or \"gpt-...\") naming a model after the prefix, or a Bedrock id (\"bedrock/<aws-region>/<inference-profile-id>\", such as \"bedrock/us-east-1/us.anthropic.claude-haiku-4-5-20251001-v1:0\")."
-  }
-}
-
-variable "classification_openai_api_key" {
-  description = "OpenAI API key used specifically by the Slack and Linear bot classifiers. Required when classification_model is an OpenAI model and the Slack or Linear bot is enabled."
-  type        = string
-  sensitive   = true
-  default     = ""
-  nullable    = false
-
-  # Fail closed once a deployed classifier is pointed at OpenAI: CI renders an
-  # unset secret as an empty string, which would otherwise deploy a
-  # credential-less classifier that rejects every message.
-  validation {
-    condition = (
-      (var.enable_slack_bot == false && var.enable_linear_bot == false) ||
-      local.classifier_provider != "openai" ||
-      trimspace(var.classification_openai_api_key) != ""
-    )
-    error_message = "classification_openai_api_key must be non-blank when the Slack or Linear bot is enabled and classification_model is an OpenAI model."
-  }
-}
-
-variable "classification_bedrock_api_key" {
-  description = "Amazon Bedrock API key used by the Slack and Linear bot classifiers when classification_model is a \"bedrock/<aws-region>/<inference-profile-id>\" id; never injected into sandboxes. For the key type and IAM permissions it needs, see \"Classify on Amazon Bedrock (Optional)\" in docs/GETTING_STARTED.md."
-  type        = string
-  sensitive   = true
-  default     = ""
-  nullable    = false
-
-  # Fail closed once a deployed classifier is pointed at Bedrock: CI renders an
-  # unset secret as an empty string, which would otherwise deploy a
-  # credential-less classifier that rejects every message.
-  validation {
-    condition = (
-      (var.enable_slack_bot == false && var.enable_linear_bot == false) ||
-      local.classifier_provider != "bedrock" ||
-      trimspace(var.classification_bedrock_api_key) != ""
-    )
-    error_message = "classification_bedrock_api_key must be non-blank when the Slack or Linear bot is enabled and classification_model is a Bedrock model."
-  }
-}
-
-variable "classification_reasoning_effort" {
-  description = "Reasoning effort the Slack and Linear bot classifiers request from an OpenAI classification_model, sent as reasoning_effort (for example \"low\"). Blank sends none, so OpenAI applies the model's default."
-  type        = string
-  default     = ""
-  nullable    = false
-
-  # Only the OpenAI transport sends reasoning_effort; an Anthropic or Bedrock
-  # classifier would silently ignore the setting.
-  validation {
-    condition = (
-      var.classification_reasoning_effort == "" ||
-      local.classifier_provider == "openai"
-    )
-    error_message = "classification_reasoning_effort applies only to an OpenAI classification_model. Leave it blank for an Anthropic or Bedrock model."
-  }
-
-  # Supported efforts differ by model, so OpenAI validates the value itself. A
-  # padded or mis-cased value would still reach it verbatim and fail every
-  # classification with HTTP 400, so reject anything but a lowercase word.
-  validation {
-    condition     = var.classification_reasoning_effort == "" || can(regex("^[a-z]+$", var.classification_reasoning_effort))
-    error_message = "classification_reasoning_effort must be blank or a lowercase OpenAI reasoning effort such as \"low\", with no surrounding whitespace."
-  }
 }
 
 # =============================================================================
 # Security Secrets
 # =============================================================================
 
-variable "token_encryption_key" {
-  description = "Key for encrypting tokens (generate with: openssl rand -base64 32)"
-  type        = string
-  sensitive   = true
-}
-
-variable "repo_secrets_encryption_key" {
-  description = "Key for encrypting repo secrets in D1 (generate with: openssl rand -base64 32)"
-  type        = string
-  sensitive   = true
-}
-
 variable "provider_accounts_encryption_key" {
-  description = "Optional existing key for provider account credentials; when blank, Terraform generates and persists a dedicated key"
+  description = "Optional existing key for provider account credentials; when blank, Terraform generates and persists a dedicated key. Exposed through the generated_worker_secrets output for the Cloudflare deploy."
   type        = string
   sensitive   = true
   nullable    = false
@@ -605,18 +216,6 @@ variable "daytona_target" {
   default     = ""
 }
 
-variable "daytona_toolbox_api_url" {
-  description = "Optional explicit Daytona toolbox proxy base URL. Leave empty to use the proxy each sandbox reports."
-  type        = string
-  default     = ""
-}
-
-variable "daytona_prebuilds_enabled" {
-  description = "Admit new Daytona image builds and let fresh sessions boot from one. Off by default: callbacks, finalization, status and cleanup keep working while it is, so closing it is the rollback control."
-  type        = bool
-  default     = false
-}
-
 variable "vercel_sandbox_token" {
   description = "Vercel API token for the Vercel Sandbox API"
   type        = string
@@ -664,12 +263,6 @@ variable "vercel_sandbox_runtime" {
   default     = "node24"
 }
 
-variable "vercel_snapshot_expiration_ms" {
-  description = "Vercel Sandbox snapshot expiration in milliseconds; 0 means no expiration"
-  type        = number
-  default     = 0
-}
-
 # -----------------------------------------------------------------------------
 # E2B (only required when sandbox_provider = "e2b")
 # -----------------------------------------------------------------------------
@@ -701,18 +294,6 @@ variable "e2b_template_id" {
     condition     = var.sandbox_provider != "e2b" || length(var.e2b_template_id) > 0
     error_message = "e2b_template_id must be set when sandbox_provider = 'e2b'."
   }
-}
-
-variable "e2b_sandbox_timeout_seconds" {
-  description = "Sandbox TTL in seconds. Default assumes a paid E2B plan. Hobby caps TTL at 3600 — set 3300."
-  type        = number
-  default     = 7200
-}
-
-variable "e2b_auto_pause" {
-  description = "Pause (not kill) the sandbox when its TTL expires, so it stays resumable and auto-resumes on activity. Default true."
-  type        = bool
-  default     = true
 }
 
 variable "e2b_template_cpu" {
@@ -750,7 +331,7 @@ variable "boat_api_url" {
 }
 
 variable "boat_base_snapshot" {
-  description = "Prefix of the Boat base snapshots built by Terraform. Older bases under this prefix are pruned after Worker deployment, keeping the deployed base and the actually replaced base confirmed by Cloudflare deployment history. Use a unique prefix per deployment sharing a Boat account or organization wallet."
+  description = "Prefix of the Boat base snapshots built by Terraform. Older bases under this prefix are pruned by the Cloudflare deploy after it deploys the control plane (BOAT_BASE_SNAPSHOT must match), keeping the deployed base and the actually replaced base confirmed by Cloudflare deployment history. Use a unique prefix per deployment sharing a Boat account or organization wallet."
   type        = string
   default     = ""
 
@@ -770,28 +351,6 @@ variable "boat_org" {
   default     = ""
 }
 
-variable "boat_sandbox_type" {
-  description = "Boat machine size for sessions that request no CPU or memory: 'small', 'default', 'large', or 'xlarge'. A request picks the smallest size that fits it."
-  type        = string
-  default     = "default"
-
-  validation {
-    condition     = var.sandbox_provider != "boat" || contains(["small", "default", "large", "xlarge"], var.boat_sandbox_type)
-    error_message = "boat_sandbox_type must be 'small', 'default', 'large', or 'xlarge' when sandbox_provider = 'boat'."
-  }
-}
-
-variable "nextauth_secret" {
-  description = "Browser authentication secret used by the control plane (legacy Terraform input name; generate with: openssl rand -base64 32)"
-  type        = string
-  sensitive   = true
-
-  validation {
-    condition     = length(regexall("\\S", var.nextauth_secret)) >= 32
-    error_message = "nextauth_secret must contain at least 32 non-whitespace characters."
-  }
-}
-
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -804,60 +363,6 @@ variable "sandbox_provider" {
   validation {
     condition     = contains(["modal", "modal-vm", "daytona", "vercel", "e2b", "boat"], var.sandbox_provider)
     error_message = "sandbox_provider must be 'modal', 'modal-vm', 'daytona', 'vercel', 'e2b', or 'boat'."
-  }
-}
-
-variable "session_do_location_hint" {
-  description = "Best-effort Cloudflare location hint for new session Durable Objects; empty preserves automatic placement. Existing objects do not move."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = contains(["", "wnam", "enam", "sam", "weur", "eeur", "apac", "apac-ne", "apac-se", "oc", "afr", "me"], var.session_do_location_hint)
-    error_message = "session_do_location_hint must be empty or one of wnam, enam, sam, weur, eeur, apac, apac-ne, apac-se, oc, afr, me."
-  }
-}
-
-variable "sandbox_inactivity_timeout_ms" {
-  description = "Regular sandbox inactivity timeout in milliseconds before OpenInspect preserves and stops the sandbox when no session-page WebSocket clients are connected."
-  type        = number
-  default     = 600000
-}
-
-variable "sandbox_unattended_inactivity_timeout_ms" {
-  description = "Sandbox inactivity timeout in milliseconds for automation, github-bot, and agent sessions without session-page WebSocket clients. The effective timeout is the minimum of this and sandbox_inactivity_timeout_ms."
-  type        = number
-  default     = 120000
-
-  validation {
-    condition = (
-      var.sandbox_unattended_inactivity_timeout_ms >= 60000 &&
-      var.sandbox_unattended_inactivity_timeout_ms <= 9007199254740991 &&
-      floor(var.sandbox_unattended_inactivity_timeout_ms) == var.sandbox_unattended_inactivity_timeout_ms
-    )
-    error_message = "sandbox_unattended_inactivity_timeout_ms must be a whole number between 60000 and 9007199254740991 ms, matching the control plane's safe-integer range."
-  }
-}
-
-variable "teams_enforcement" {
-  description = "Session team authorization mode; private visibility applies in every mode."
-  type        = string
-  default     = "shadow"
-
-  validation {
-    condition     = contains(["off", "shadow", "on"], var.teams_enforcement)
-    error_message = "teams_enforcement must be 'off', 'shadow', or 'on'."
-  }
-}
-
-variable "sandbox_boot_timeout_ms" {
-  description = "Milliseconds a sandbox whose bridge has connected may keep booting (clone, setup.sh, start.sh, agent start) before OpenInspect fails it and the prompt it was for."
-  type        = number
-  default     = 1800000
-
-  validation {
-    condition     = var.sandbox_boot_timeout_ms > 240000
-    error_message = "sandbox_boot_timeout_ms must exceed the 240000 ms connect watchdog."
   }
 }
 
@@ -900,42 +405,6 @@ variable "app_icon_url" {
   default     = ""
 }
 
-variable "enable_durable_object_bindings" {
-  description = "Enable DO bindings. For initial deployment: set to false (applies migrations), then set to true (adds bindings)."
-  type        = bool
-  default     = true
-}
-
-variable "control_plane_migration_tag" {
-  description = "Current migration tag for control plane DO migrations"
-  type        = string
-  default     = "v1"
-}
-
-variable "control_plane_migration_old_tag" {
-  description = "Previous migration tag for control plane DO migrations (null for fresh deployments)"
-  type        = string
-  default     = null
-}
-
-variable "control_plane_new_sqlite_classes" {
-  description = "DO classes new in this control plane migration step (empty means treat all configured classes as new)"
-  type        = list(string)
-  default     = []
-}
-
-variable "control_plane_deleted_classes" {
-  description = "DO classes deleted in this control plane migration step"
-  type        = list(string)
-  default     = []
-}
-
-variable "enable_service_bindings" {
-  description = "Enable service bindings. Set false for initial deployment if target workers don't exist yet."
-  type        = bool
-  default     = true
-}
-
 variable "project_root" {
   description = "Root path to the project repository"
   type        = string
@@ -953,46 +422,14 @@ variable "r2_media_location" {
 }
 
 variable "r2_media_bucket_name" {
-  description = "Name of the R2 media bucket Terraform creates and manages. Leave empty to use the default 'open-inspect-media-<deployment_name>'. Changing a managed bucket's name plans replacement, not an in-place rename. Cloudflare rejects deletion while objects remain; Terraform does not empty the bucket. An existing bucket must be imported into cloudflare_r2_bucket.media before applying. If that address already tracks another bucket, follow the migration steps in terraform.tfvars.example to migrate objects and replace the state entry first."
+  description = "Name of the R2 media bucket Terraform creates and manages. Leave empty to use the default 'open-inspect-media-<deployment_name>'. Changing a managed bucket's name plans replacement, not an in-place rename. Cloudflare rejects deletion while objects remain; Terraform does not empty the bucket. An existing bucket must be imported into module.environment.cloudflare_r2_bucket.media before applying. If that address already tracks another bucket, follow the migration steps in terraform.tfvars.example to migrate objects and replace the state entry first."
   type        = string
   default     = ""
 }
 
 # =============================================================================
-# Access Control
+# Documentation Site
 # =============================================================================
-# Four allowlists gate sign-in; a user is admitted if they match ANY configured
-# allowlist. Leave them all empty only with unsafe_allow_all_users = true.
-
-variable "allowed_users" {
-  description = "Comma-separated deployment baseline of GitHub usernames allowed to sign in (not canonical user IDs). Additive with SQL-managed sign-in rules; the UI cannot narrow this baseline and Terraform does not remove managed grants. Keep a compatible deployment baseline for every enabled provider; managed rules do not satisfy Terraform safety checks. GitHub-only rules do not support Google sign-in."
-  type        = string
-  default     = ""
-}
-
-variable "allowed_email_domains" {
-  description = "Comma-separated deployment baseline of exact verified email domains (e.g., 'example.com,corp.io') for GitHub or Google sign-in; subdomains are not included. Additive with SQL-managed rules and read-only in the UI. Google requires a deployment email/domain baseline unless unsafe allow-all is effective; managed rules do not satisfy the deployment safety checks."
-  type        = string
-  default     = ""
-}
-
-variable "allowed_emails" {
-  description = "Comma-separated deployment baseline of exact verified emails for GitHub or Google sign-in, matched case-insensitively. Prefer an active recovery administrator's email here with unsafe mode disabled; exact emails avoid admitting an entire shared domain. Additive with SQL-managed rules and read-only in the UI. Managed rules cannot replace the required compatible deployment baseline."
-  type        = string
-  default     = ""
-}
-
-variable "allowed_github_orgs" {
-  description = "Comma-separated deployment baseline of GitHub organization logins whose active members may sign in, additive with SQL-managed rules and read-only in the UI. Checks use the signing-in user's token and GitHub App Organization Members read-only permission; rules request no new OAuth scopes or read:org. Verify App permissions and approve permission changes separately. GitHub-only rules do not support Google sign-in; managed rules do not replace the required deployment baseline."
-  type        = string
-  default     = ""
-}
-
-variable "unsafe_allow_all_users" {
-  description = "Explicit unsafe opt-in to Terraform's access-control checks. Allows any otherwise valid provider identity only when all effective deployment AND SQL-managed allowlists are empty; nonempty rules keep it dormant. The sign-in allowlist editor is read-only whenever this flag is true. Prefer false with a compatible recovery baseline; managed rules do not satisfy Terraform's baseline checks."
-  type        = bool
-  default     = false
-}
 
 variable "docs_site_enabled" {
   description = "Provision the public documentation site's Vercel project (packages/docs). Requires vercel_api_token and vercel_team_id. Deployment stays manual: the project has no git integration, so only the Deploy Docs workflow publishes it."

@@ -624,6 +624,64 @@ def test_boat_prune_retains_the_explicit_replaced_base_not_newer_artifacts(boat_
     assert f"Keep {replaced['name']} (rollback)" in output
 
 
+def at_age(namespace, monkeypatch, snapshot, age_seconds, now="2026-01-10T12:00:00+00:00"):
+    """Freeze the prune's clock and date the snapshot `age_seconds` before it."""
+    from datetime import datetime, timedelta
+
+    moment = datetime.fromisoformat(now)
+    monkeypatch.setitem(namespace["prune_snapshots"].__globals__, "utc_now", lambda: moment)
+    return {**snapshot, "createdAt": (moment - timedelta(seconds=age_seconds)).isoformat()}
+
+
+def test_boat_prune_keeps_a_ready_base_published_within_the_grace_period(
+    boat_prune, monkeypatch, capsys
+):
+    # A concurrent Terraform apply published this base; its deploy has not run yet.
+    namespace, transport = boat_prune
+    grace = namespace["PRUNE_GRACE_SECONDS"]
+    deployed = boat_snapshot("a", 1)
+    replaced = boat_snapshot("b", 2)
+    fresh = at_age(namespace, monkeypatch, boat_snapshot("c", 3), grace - 1)
+    stale = at_age(namespace, monkeypatch, boat_snapshot("d", 3), grace)
+    inventory = {"snapshots": [deployed, replaced, fresh, stale]}
+    transport.answers = [inventory, {}, inventory]
+
+    namespace["main"](["prune"])
+
+    assert [call[1] for call in transport.calls if call[0] == "DELETE"] == [
+        f"/saved-snapshots/{stale['name']}"
+    ]
+    assert f"Keep {fresh['name']} (within the {grace}s grace period)" in capsys.readouterr().out
+
+
+def test_boat_prune_keeps_a_ready_base_whose_age_is_unknown(boat_prune, monkeypatch):
+    namespace, transport = boat_prune
+    at_age(namespace, monkeypatch, boat_snapshot("c", 3), 0)
+    without_time = {k: v for k, v in boat_snapshot("c", 3).items() if k != "createdAt"}
+    malformed = {**boat_snapshot("d", 3), "createdAt": "not a time"}
+    inventory = {
+        "snapshots": [boat_snapshot("a", 1), boat_snapshot("b", 2), without_time, malformed]
+    }
+    transport.answers = [inventory, inventory]
+
+    namespace["main"](["prune"])
+
+    assert [call for call in transport.calls if call[0] == "DELETE"] == []
+
+
+def test_boat_prune_still_deletes_a_failed_base_within_the_grace_period(boat_prune, monkeypatch):
+    namespace, transport = boat_prune
+    failed = at_age(namespace, monkeypatch, boat_snapshot("c", 3, "failed"), 60)
+    inventory = {"snapshots": [boat_snapshot("a", 1), boat_snapshot("b", 2), failed]}
+    transport.answers = [inventory, {}, inventory]
+
+    namespace["main"](["prune"])
+
+    assert [call[1] for call in transport.calls if call[0] == "DELETE"] == [
+        f"/saved-snapshots/{failed['name']}"
+    ]
+
+
 @pytest.mark.parametrize("status", [None, "saving", "failed"])
 def test_boat_prune_requires_a_ready_deployed_snapshot(boat_prune, status):
     namespace, transport = boat_prune

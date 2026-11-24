@@ -61,12 +61,12 @@ Key design decisions:
 
 ## Deployment
 
-The bot is deployed via Terraform as a standalone Cloudflare Worker alongside the existing workers.
+Terraform provisions the bot's Worker script, KV namespace and queues; the Cloudflare deploy
+(`scripts/cloudflare-deploy`) uploads its code and configuration as a standalone Cloudflare Worker
+alongside the existing workers.
 
-**Two-phase deployment** (same pattern as the Slack bot):
-
-1. Deploy with `enable_service_bindings = false` (creates the worker)
-2. Set `enable_service_bindings = true` and apply again (adds the `CONTROL_PLANE` binding)
+**First deploy** (same pattern as the Slack bot): deploy with `ENABLE_SERVICE_BINDINGS=false`, then
+set it to `true` and deploy again to add the `CONTROL_PLANE` binding.
 
 ### Environment Bindings
 
@@ -103,15 +103,16 @@ permission list.
 
 **Webhook URL**: `https://open-inspect-github-bot-{suffix}.{account}.workers.dev/webhooks/github`
 
-**Webhook secret**: Must match `GITHUB_WEBHOOK_SECRET` in the Terraform configuration.
+**Webhook secret**: Must match the `GH_WEBHOOK_SECRET` deploy setting, which the deploy binds as
+`GITHUB_WEBHOOK_SECRET`.
 
 ### Optional Reviewer App
 
 GitHub refuses to let a PR author approve their own PR. To let the bot approve PRs opened by the
 main App, install a second App with only **Pull requests: Read & write** (plus GitHub's mandatory
-Metadata read permission), with webhooks disabled. Set `github_reviewer_username` and all three
-`github_reviewer_app_*` Terraform variables together, or leave all four empty. Use the reviewer's
-exact bot login, such as `my-reviewer[bot]`. See the
+Metadata read permission), with webhooks disabled. Set the `GH_REVIEWER_USERNAME` and all three
+`GH_REVIEWER_APP_*` deploy settings together, or leave all four empty. Use the reviewer's exact bot
+login, such as `my-reviewer[bot]`. See the
 [two-App setup](../../docs/integrations/GITHUB.md#optional-separate-reviewer-app).
 
 The control plane holds the reviewer's App credentials and brokers its installation token through

@@ -13,7 +13,8 @@ next prompt.
 
 ## Required Configuration
 
-Set these values in `terraform/environments/production/terraform.tfvars`:
+Terraform builds the template, so set these values in
+`terraform/environments/production/terraform.tfvars`:
 
 ```hcl
 sandbox_provider = "e2b"
@@ -22,14 +23,27 @@ e2b_api_key     = "e2b_..."             # from the E2B dashboard → API Keys
 e2b_template_id = "open-inspect-sandbox" # template name to build/use
 
 # Optional
-# e2b_api_url                 = "https://api.e2b.app" # REST API base URL
-# e2b_sandbox_timeout_seconds = 7200                  # sandbox TTL (default 2h)
-# e2b_auto_pause              = true                   # pause (recoverable), not kill, on TTL lapse
-# e2b_template_cpu            = 2                      # template vCPU count
-# e2b_template_memory_mb      = 4096                   # template memory (MB, even number)
+# e2b_api_url            = "https://api.e2b.app" # REST API base URL
+# e2b_template_cpu       = 2                      # template vCPU count
+# e2b_template_memory_mb = 4096                   # template memory (MB, even number)
 ```
 
-For GitHub Actions-based deployment, configure the matching repository secrets:
+The Cloudflare deploy configures the control plane, so set these in its `deploy.env` (see
+[GETTING_STARTED.md](./GETTING_STARTED.md#configure-deployenv)):
+
+```bash
+SANDBOX_PROVIDER=e2b
+E2B_API_KEY=e2b_...
+E2B_TEMPLATE_ID=open-inspect-sandbox
+
+# Optional
+# E2B_API_URL=https://api.e2b.app
+# E2B_SANDBOX_TIMEOUT_SECONDS=7200   # sandbox TTL (default 2h)
+# E2B_AUTO_PAUSE=true                # pause (recoverable), not kill, on TTL lapse
+```
+
+For GitHub Actions-based deployment, configure the matching repository variables or secrets (used by
+both the Terraform and deploy workflows):
 
 ```text
 SANDBOX_PROVIDER=e2b
@@ -46,7 +60,7 @@ The E2B provider also needs the normal Open-Inspect values such as Cloudflare, G
 Anthropic, and web app configuration. See [GETTING_STARTED.md](./GETTING_STARTED.md) for the full
 deployment flow.
 
-> On the **Hobby** tier (~1h runtime cap), lower `e2b_sandbox_timeout_seconds` to `3300`.
+> On the **Hobby** tier (~1h runtime cap), lower `E2B_SANDBOX_TIMEOUT_SECONDS` to `3300`.
 
 ## Template Build
 
@@ -149,7 +163,7 @@ operations. See [SECRETS.md](./SECRETS.md).
 
 ## Verify
 
-After `terraform apply`, verify:
+After `terraform apply` and the Cloudflare deploy, verify:
 
 1. The control plane is healthy:
 
@@ -175,8 +189,8 @@ output (envd reports byte counts only); the in-sandbox forensics file is `/tmp/o
 ## Upgrading from the launcher-based template
 
 Earlier versions delivered session env as a file (`/tmp/oi-session.env`) consumed by a launcher
-baked into the template (`oi-launch`). One `terraform apply` upgrades in place: the control plane
-deploys first and boots every sandbox by direct exec, then the template rebuild removes the
+baked into the template (`oi-launch`). The upgraded control plane (from the Cloudflare deploy) boots
+every sandbox by direct exec, and the template rebuild (from `terraform apply`) removes the
 launcher. **Existing prebuilt images keep working without a rebuild** — their baked launcher is
 simply never fed and never runs; the runtime they bundle boots by direct exec like everything else.
 
@@ -191,7 +205,7 @@ hash of the template and runtime source. To force a rebuild, change a hashed sou
 
 ### Sandbox Times Out Too Soon
 
-On plans with a short maximum lifetime, lower `e2b_sandbox_timeout_seconds`. With `E2B_AUTO_PAUSE`
+On plans with a short maximum lifetime, lower `E2B_SANDBOX_TIMEOUT_SECONDS`. With `E2B_AUTO_PAUSE`
 enabled the sandbox pauses (recoverable) at the TTL rather than being lost.
 
 ### Missing Repository Access

@@ -71,7 +71,7 @@ jobs:
             packages/vercel-infra \
             packages/sandbox-runtime/src/sandbox_runtime/runtime_manifest.json \
             terraform/d1/migrations \
-            terraform/environments/production/workers-control-plane.tf \
+            scripts/cloudflare-deploy/config.mjs \
             .env.example \
             docker-compose.yml \
             docs/CONTROL_PLANE_CONTAINER.md

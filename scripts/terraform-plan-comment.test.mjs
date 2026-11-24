@@ -8,7 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const workflow = readFileSync(
-  new URL("../.github/workflows/terraform.yml", import.meta.url),
+  new URL("../.github/workflows/terraform-cloudflare.yml", import.meta.url),
   "utf8"
 );
 const formatter = fileURLToPath(new URL("./terraform-plan-comment.mjs", import.meta.url));
@@ -386,6 +386,6 @@ test("commenting has minimal permissions and never checks out or executes PR cod
 
 test("workflow-only changes trigger the security regression tests in CI", () => {
   const ci = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
-  assert.equal(ci.split('      - ".github/workflows/terraform.yml"').length - 1, 2);
+  assert.equal(ci.split('      - ".github/workflows/terraform-cloudflare.yml"').length - 1, 2);
   assert.match(ci, /run: npm run test:terraform-workflow-contract/);
 });

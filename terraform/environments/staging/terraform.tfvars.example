@@ -1,0 +1,264 @@
+# =============================================================================
+# Open-Inspect - Cloudflare Environment Terraform Variables
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in the values.
+# NEVER commit terraform.tfvars to source control!
+#
+# Terraform provisions infrastructure only: D1, KV, R2, Queues, the Worker
+# scripts (without code), Vercel projects and sandbox artifacts. Worker code
+# and configuration -- sign-in providers, allowlists, bot credentials, the
+# classifier, encryption keys, timeouts and custom domains -- are deployed by
+# scripts/cloudflare-deploy/deploy.mjs from the settings in
+# scripts/cloudflare-deploy/deploy.env.example. Values for those settings left
+# in an older terraform.tfvars only produce "undeclared variable" warnings.
+#
+# Alternatively, set values via environment variables:
+#   export TF_VAR_cloudflare_api_token="your-token"
+# =============================================================================
+
+# =============================================================================
+# Provider Authentication
+# =============================================================================
+
+# Cloudflare API token.
+# Required account permissions:
+#   - Workers Scripts: Edit
+#   - Workers KV Storage: Edit
+#   - Workers R2 Storage: Edit
+#   - D1: Edit
+#   - Queues: Edit (required when enable_slack_bot = true)
+# Optional if you manage Cloudflare routes/custom domains:
+#   - Workers Routes: Edit
+# Create at: https://dash.cloudflare.com/profile/api-tokens
+cloudflare_api_token = ""
+
+# Cloudflare account ID (found in dashboard URL or account overview)
+cloudflare_account_id = ""
+
+# Cloudflare Workers subdomain (found in Workers & Pages -> Overview, bottom-right of panel)
+# This is the subdomain used for workers.dev URLs (e.g., "myaccount" in "worker.myaccount.workers.dev")
+cloudflare_worker_subdomain = ""
+
+# Vercel API token
+# Only required when web_platform = "vercel"
+# Create at: https://vercel.com/account/tokens
+# NOTE: Due to a Terraform provider limitation, the Vercel provider validates this
+# token even when web_platform = "cloudflare". If you're not using Vercel, leave
+# these commented out to use the built-in dummy defaults.
+# vercel_api_token = ""
+
+# Vercel team/account ID (found in Account Settings -> "Your ID")
+# Even personal accounts have an ID (usually starts with "team_")
+# vercel_team_id = ""  # e.g., "team_xxxxxxxxxxxxxxxxxxxx"
+
+# Modal API token
+# Only required when sandbox_provider = "modal" or "modal-vm"
+# Create at: https://modal.com/settings
+modal_token_id = ""
+modal_token_secret = ""
+
+# Modal workspace, environment, and endpoint web suffix
+# Only required when sandbox_provider = "modal" or "modal-vm"
+# workspace: your Modal username (e.g., "myworkspace")
+# environment: Modal environment name used by the CLI. Staging must NOT share
+#   production's: both roots deploy the same `open-inspect` app and
+#   `internal-api` secret into it, so staging's apply would replace the
+#   secret's ALLOWED_CONTROL_PLANE_HOSTS with only staging's control-plane host
+#   and production's apply would not restore it. Create a dedicated Modal
+#   environment and set the same name as MODAL_ENVIRONMENT in the staging
+#   GitHub Environment.
+# environment_web_suffix: Modal web suffix used in endpoint URLs:
+#   empty suffix:      https://myworkspace--app.modal.run
+#   "production":      https://myworkspace-production--app.modal.run
+modal_workspace               = ""
+modal_environment             = "staging"
+modal_environment_web_suffix  = "staging" # also MODAL_ENVIRONMENT_WEB_SUFFIX in the staging GitHub Environment
+
+# Daytona REST API
+# Only required when sandbox_provider = "daytona"
+# Create an API key at https://app.daytona.io with permissions:
+#   Sandboxes: Read, Write  |  Snapshots: Read, Write, Delete
+# Seed the base snapshot with packages/daytona-infra/src/bootstrap.py before enabling.
+daytona_api_url = ""           # e.g., "https://app.daytona.io/api"
+daytona_api_key = ""           # Requires Sandboxes (Read/Write) + Snapshots (Read/Write/Delete)
+daytona_base_snapshot = ""     # Prefix for the Terraform-managed Daytona snapshot
+# daytona_base_snapshot_memory_gib = 2 # Memory inherited by sandboxes created from the snapshot
+# daytona_target = ""          # Optional Daytona target name
+
+# Vercel Sandbox API
+# Only required when sandbox_provider = "vercel"
+# Create a Vercel access token and use a project ID with Sandbox access.
+vercel_sandbox_token      = ""
+vercel_sandbox_project_id = "" # e.g., "prj_xxxxxxxxxxxxxxxxxxxx"
+# vercel_sandbox_team_id  = "" # Optional team ID, e.g., "team_xxxxxxxxxxxxxxxxxxxx"
+# vercel_sandbox_api_base_url = "" # Optional API override for advanced testing
+# vercel_base_snapshot_id = "" # Optional manual override; skips Terraform-managed snapshot builds
+# vercel_sandbox_runtime  = "node24"
+
+# E2B
+# Only required when sandbox_provider = "e2b"
+# - e2b_api_key: runtime key (control-plane → E2B API) AND template-build auth
+#                (the e2b-infra module builds via the Template SDK). Dashboard → API Keys.
+# The e2b-infra Terraform module builds the template automatically; e2b_template_id
+# is the name it creates/rebuilds (also used at runtime for fresh sandboxes).
+e2b_api_key = ""               # sensitive — runtime REST API key (also auths the build)
+e2b_template_id = ""           # e.g., "open-inspect-sandbox"
+# e2b_api_url = "https://api.e2b.app"
+# e2b_template_cpu = 2         # Must match E2B_TEMPLATE_CPU for the deploy
+# e2b_template_memory_mb = 4096 # Must match E2B_TEMPLATE_MEMORY_MB for the deploy
+
+# Boat
+# Only required when sandbox_provider = "boat"
+# - boat_api_key: runtime key (control-plane → Boat API, sandbox access password HMAC)
+#                 AND snapshot-build auth. Dashboard → API keys.
+# The boat-infra Terraform module builds the saved snapshot automatically;
+# boat_base_snapshot is the prefix of the name it saves (and the one fresh
+# sandboxes deploy from). 1-46 lowercase letters, digits or dashes.
+# Base prefixes oi-img and oi-img-* are reserved for prebuilt images and rejected.
+# Use a unique prefix per deployment sharing a Boat account or organization wallet
+# to avoid deleting another deployment's live base. After the control plane
+# deploys, the Cloudflare deploy prunes exact <prefix>-<16 lowercase hex> names, retaining the deployed
+# base and the base it actually replaced, using confirmed Worker deployment history.
+# Snapshot name, API URL or organization changes trigger cleanup, not credentials alone.
+# Saving snapshots, manual names and other scopes are untouched.
+# See docs/BOAT_SANDBOX_PROVIDER.md#base-snapshot-pruning.
+boat_api_key = ""              # sensitive — runtime REST API key (also auths the build)
+boat_base_snapshot = ""        # e.g., "open-inspect"
+# boat_api_url = "https://boat.dev/api/v1"
+# boat_org = ""                # Optional organization wallet; empty uses the active one.
+#                              # Sandboxes are created private, whatever its default.
+
+# =============================================================================
+# Bots
+# =============================================================================
+# Each enabled bot gets a Worker script, a KV namespace and its queues. Keep
+# these equal to ENABLE_*_BOT in the deploy settings; the bots' credentials and
+# models are deploy settings.
+
+enable_slack_bot  = false
+enable_github_bot = false
+enable_linear_bot = false
+
+# =============================================================================
+# API Keys
+# =============================================================================
+
+# Anthropic API key injected into Modal session sandboxes. Daytona, E2B and
+# Vercel read model keys only from the secret store in the web app, which
+# overrides this value everywhere. Optional: leave blank to supply model
+# credentials as secrets instead. (The deploy also uses ANTHROPIC_API_KEY for
+# the Slack/Linear classifier unless CLASSIFICATION_ANTHROPIC_API_KEY is set.)
+anthropic_api_key = ""
+
+# =============================================================================
+# Security Secrets
+# =============================================================================
+# Optional existing provider account credential encryption key. Leave blank for
+# Terraform to generate and persist a dedicated key. Never change this after
+# storing provider account credentials. The deploy reads the effective value
+# (see the generated_worker_secrets output) as PROVIDER_ACCOUNTS_ENCRYPTION_KEY.
+provider_accounts_encryption_key = ""
+
+# Modal API secret (for control plane -> Modal authentication)
+# Only required when sandbox_provider = "modal" or "modal-vm"
+# Generate with: openssl rand -hex 32
+# Must match MODAL_API_SECRET in the deploy settings.
+modal_api_secret = ""
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+# Sandbox backend for session execution
+# - "modal": existing Modal-based sandboxes with filesystem snapshot restore
+# - "daytona": direct Daytona REST API integration with stop/start resume
+# - "vercel": Vercel Sandbox API with filesystem snapshot restore
+# - "e2b": direct E2B REST API integration with pause/resume
+# - "boat": direct Boat REST API integration with stop/resume (archived snapshot)
+# Select "modal-vm" for Docker-capable VMs (deployment-wide; see docs/MODAL_DOCKER.md).
+sandbox_provider = "modal"
+
+# Platform for the web app deployment
+# - "vercel": deploy the Next.js app to Vercel (requires vercel_api_token + vercel_team_id)
+# - "cloudflare": deploy the web app to Cloudflare Workers via OpenNext (no Vercel credentials needed)
+web_platform = "vercel"
+
+# Unique deployment name (used in resource names and URLs)
+# IMPORTANT: This must be globally unique for Vercel URLs.
+# Use something unique like your GitHub username, company name, or a random suffix.
+# Staging must not reuse production's name; every resource name derives from it.
+# Example: "acme-staging"
+# The web app URL will be: https://open-inspect-{deployment_name}.vercel.app
+deployment_name = ""
+
+# Path to project root (relative to this directory)
+project_root = "../../../"
+
+# Display name shown in the web UI, bot messages (Slack, Linear), and PR body footers.
+# Also used as the outbound HTTP User-Agent header. Defaults to "Open-Inspect".
+# app_name = "Open-Inspect"
+
+# Optional URL (absolute or root-relative path) to a custom logo image for the
+# command menu and browser favicon. Leave empty to use the built-in favicon
+# and default in-app icon.
+# Example: "/branding/acme-logo.svg" (file under packages/web/public/) or
+#          "https://cdn.example.com/logo.svg".
+# app_icon_url = ""
+
+# Name of the R2 media bucket Terraform creates and manages (optional)
+# Defaults to "open-inspect-media-<deployment_name>" when left empty.
+# This selects the name of the managed module.environment.cloudflare_r2_bucket.media resource; it
+# does not select an externally managed bucket. Import a pre-created bucket into
+# state before applying. Changing the name of a bucket Terraform already manages
+# plans replacement, not an in-place rename, as described below.
+#
+# Manual setup requirements (when an admin pre-creates the bucket):
+#   - Must live in the same Cloudflare account as the Workers (cloudflare_account_id).
+#   - Private bucket — do NOT enable public access. The control-plane Worker
+#     reads/writes objects through its binding; clients never hit R2 directly.
+#   - No CORS rules or lifecycle policies are required.
+#   - Location should match r2_media_location (default ENAM).
+#
+# Create with wrangler (equivalent to what Terraform would do):
+#   wrangler r2 bucket create <bucket-name> --location ENAM
+# Or create via the Cloudflare dashboard: R2 -> Create bucket (Standard storage class).
+#
+# Set r2_media_bucket_name to the pre-created bucket's name, then import it so
+# Terraform manages the bucket without trying to recreate it. Run from this
+# directory with the deployment's initialized backend, workspace, and variables.
+# If module.environment.cloudflare_r2_bucket.media already tracks a bucket, use the migration below
+# instead of importing over the occupied address:
+#   terraform import module.environment.cloudflare_r2_bucket.media <cloudflare_account_id>/<bucket-name>/default
+#
+# WARNING - changing an existing Terraform-managed bucket's name:
+# Terraform plans to delete the old bucket and create a new one. It does not empty
+# the bucket: Cloudflare rejects deletion while objects remain, so apply fails
+# without deleting them. In-progress multipart uploads and event notification
+# rules also block deletion. Do not rely on a name change to migrate stored media.
+#
+# To switch to a pre-created bucket while retaining the old bucket:
+#   1. Pause automated Terraform applies and media writes. Back up Terraform state
+#      securely, and use the same initialized backend/workspace as the deployment.
+#   2. Create the destination bucket with the requirements above. Copy and verify
+#      all objects (e.g. with rclone); keep writes paused through the cutover.
+#   3. Set r2_media_bucket_name to the destination name in local variables and in
+#      the CI configuration (R2_MEDIA_BUCKET_NAME) if CI manages the deployment.
+#   4. Replace the occupied state entry; do not plan/apply between these commands:
+#        terraform state rm module.environment.cloudflare_r2_bucket.media
+#        terraform import module.environment.cloudflare_r2_bucket.media <cloudflare_account_id>/<new-bucket-name>/default
+#      If import fails, resolve it before any apply; the address is now untracked.
+#   5. Run terraform plan and confirm the destination bucket is not being created,
+#      replaced, or deleted. Apply, then run the Cloudflare deploy so the Worker binds the new bucket (R2_MEDIA_BUCKET_NAME), verify media access,
+#      then resume writes and automated applies.
+# The old bucket and its objects remain, but are no longer managed by Terraform.
+# Retain or clean them up separately only after verifying the cutover.
+#
+# Worker runtime needs (granted automatically through the binding, listed for reference):
+#   - R2 object-level: Read, Write, Delete on this bucket only.
+# The Terraform/Cloudflare API token does NOT need object-level R2 permissions —
+# it only manages the bucket resource and the Worker binding. Required token scopes:
+#   - Workers R2 Storage: Edit for bucket creation, updates, or deletion. An imported
+#     bucket still requires bucket read access for imports and Terraform refresh;
+#     Read alone is sufficient only while no bucket changes are planned.
+#   - Workers Scripts: Edit (for the deploy to attach the MEDIA_BUCKET binding)
+# r2_media_bucket_name = ""

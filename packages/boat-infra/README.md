@@ -15,9 +15,10 @@ snapshots and provide the launcher baked into them.
   deploy from that name. Its sandboxes are created private, so one billed to an organization is
   never shared. Used both for manual builds and by the Terraform module. Its `prune` command removes
   superseded Terraform-built bases after deployment using an explicit deployed/replaced pair.
-- **`prune-deployed-snapshots.py`**: runs after the Worker deployment in Terraform, reads
-  Cloudflare's confirmed deployments and version bindings through the builder's same HTTPS-only,
-  nonredirecting opener, and verifies the active deployment before invoking the Boat pruner.
+- **`prune-deployed-snapshots.py`**: runs in the Cloudflare deploy
+  (`scripts/cloudflare-deploy/deploy.mjs`) after the control plane deploys, reads Cloudflare's
+  confirmed deployments and version bindings through the builder's same HTTPS-only, nonredirecting
+  opener, and verifies the active deployment before invoking the Boat pruner.
 - **`launcher.sh`** — baked at `/home/user/openinspect/launcher.sh`. A create-time setup script that
   Boat starts the moment a new sandbox's machine is up waits for the control plane's launch marker
   (written once the sandbox is known private and its tunnel env file is in the workspace) and execs
@@ -79,12 +80,12 @@ Optional: `BOAT_API_URL` (default `https://boat.dev/api/v1`), `BOAT_ORG` (organi
 
 Rebuild whenever `packages/sandbox-runtime`, `packages/sandbox-images` or this directory changes.
 
-> Builds are automated via Terraform when `sandbox_provider = "boat"`. The production
-> `terraform/environments/production/boat.tf` hashes the shared build inputs through the
+> Builds are automated via Terraform when `sandbox_provider = "boat"`.
+> `terraform/modules/cloudflare-environment/boat.tf` hashes the shared build inputs through the
 > `sandbox-images` CLI, then passes the hash to `terraform/modules/boat-infra` to build a new
 > snapshot under a new name when those inputs change. The control-plane Worker switches only after
-> verification; Terraform then prunes superseded bases. Manual builds are only for initial setup or
-> debugging.
+> verification, on the next Cloudflare deploy, which then prunes superseded bases. Manual builds are
+> only for initial setup or debugging.
 >
 > Boat snapshots save `/home`, new top-level directories and changes under `/etc`, `/usr`, `/opt`,
 > `/var`, `/root` and `/srv`, but not `/tmp` or `~/.cache`. The image therefore keeps `/app` and
@@ -92,10 +93,9 @@ Rebuild whenever `packages/sandbox-runtime`, `packages/sandbox-images` or this d
 
 ## Prune base snapshots
 
-Terraform runs `prune-deployed-snapshots.py` after the control-plane Worker switches to the selected
-snapshot, including the first apply after the pruning resource is introduced. Cleanup is triggered
-by changes to the snapshot name, Boat API URL or organization, even with the same build hash, not by
-credential changes alone.
+The Cloudflare deploy runs `prune-deployed-snapshots.py` after the control-plane Worker deploys, on
+every deploy with `SANDBOX_PROVIDER=boat`. It is idempotent: when no base has been superseded, it
+deletes nothing.
 
 The wrapper verifies the expected active deployment and desired Boat snapshot against Cloudflare's
 confirmed deployment list and version bindings. It follows actual deployed base transitions,
@@ -108,7 +108,10 @@ A provider, Boat API URL, organization or prefix change ends the history search:
 untouched and the wrapper passes an explicit empty `BOAT_REPLACED_SNAPSHOT`, with no rollback base
 in the new scope. When pruning proceeds, it retains at most two applicable bases, not necessarily
 two on a first deployment or scope change. Only exact `<prefix>-<16 lowercase hex>` names are
-candidates. It skips `saving` snapshots and deletes remaining `ready` or `failed` candidates. Manual
+candidates. It skips `saving` snapshots and deletes remaining `ready` or `failed` candidates, except
+that a `ready` base younger than a few hours (`PRUNE_GRACE_SECONDS` in `build-template.py`), or one
+with no usable creation time, is kept: a concurrent Terraform apply may have just published it and
+its deploy has not run yet. A later deploy prunes it once it is older. Manual
 `<prefix>-<12 hex>-<timestamp>` names, prebuilt images, other names and snapshots under other or
 longer prefixes are untouched.
 

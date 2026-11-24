@@ -1,0 +1,252 @@
+name: Deploy (Cloudflare environment)
+
+# Reusable: uploads Worker code and configuration for one Cloudflare
+# environment with scripts/cloudflare-deploy/deploy.mjs. Called by
+# deploy-production.yml, which owns the triggers.
+#
+# Settings come from the GitHub Environment (falling back to repository-level
+# variables and secrets) under the names terraform.yml used to pass as
+# TF_VAR_*. Defaults and validation live in scripts/cloudflare-deploy/config.mjs.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub Environment to deploy
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # A push is classified with the deployment's own SANDBOX_PROVIDER, which may
+    # be set only on the Environment. Other triggers read no Environment values.
+    environment: ${{ github.event_name == 'push' && inputs.environment || '' }}
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+      sha: ${{ steps.decide.outputs.sha }}
+    steps:
+      - name: Checkout
+        if: github.event_name == 'push'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # - workflow_run: deploy what a Terraform run on main applied. Only an
+      #   apply that ran and succeeded counts: a run that skipped its apply
+      #   (nothing to provision, or no secrets) deployed on its own push, and
+      #   pull-request plans are ignored.
+      # - push: deploy now, unless Terraform will apply for this provider and a
+      #   Terraform run for this commit exists, whose completion deploys it once
+      #   the apply is done. If that run never appears (GitHub's path filter
+      #   evaluates at most 300 changed files, and a forced push has no usable
+      #   base), deploy anyway rather than leave the commit undeployed.
+      # - workflow_dispatch: deploy the dispatched ref.
+      - name: Decide
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          BASE_SHA: ${{ github.event.before }}
+          SANDBOX_PROVIDER: ${{ vars.SANDBOX_PROVIDER || secrets.SANDBOX_PROVIDER }}
+        run: |
+          set -euo pipefail
+          deploy=false
+          sha="$GITHUB_SHA"
+          case "$EVENT" in
+            workflow_run)
+              sha="$RUN_SHA"
+              if [ "$RUN_CONCLUSION" = "success" ] && { [ "$RUN_EVENT" = "push" ] || [ "$RUN_EVENT" = "workflow_dispatch" ]; }; then
+                apply="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --paginate --jq '.jobs[] | select(.name | endswith("Apply")) | .conclusion')"
+                if [ "$apply" = "success" ]; then
+                  deploy=true
+                else
+                  echo "::notice::Terraform did not apply for this run; nothing to deploy after it."
+                fi
+              fi
+              ;;
+            push)
+              terraform="$(node scripts/cloudflare-deploy/changes.mjs --base "$BASE_SHA" --head "$GITHUB_SHA" --sandbox-provider "$SANDBOX_PROVIDER" | sed -n 's/^terraform=//p')"
+              if [ "$terraform" != "true" ]; then
+                deploy=true
+              else
+                runs=0
+                for attempt in $(seq 1 12); do
+                  runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/terraform-$ENVIRONMENT.yml/runs?head_sha=$GITHUB_SHA&event=push&per_page=1" --jq .total_count)"
+                  [ "$runs" -gt 0 ] && break
+                  sleep 10
+                done
+                if [ "$runs" -gt 0 ]; then
+                  echo "::notice::This push also applies Terraform; the deploy follows its apply."
+                else
+                  echo "::warning::No Terraform run started for this commit; deploying without waiting."
+                  deploy=true
+                fi
+              fi
+              ;;
+            workflow_dispatch)
+              deploy=true
+              ;;
+          esac
+          printf 'deploy=%s\nsha=%s\n' "$deploy" "$sha" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [gate]
+    if: needs.gate.outputs.deploy == 'true' && github.ref == 'refs/heads/main'
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Check if secrets are configured
+        id: check
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "has-secrets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-secrets=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Cloudflare deploy skipped - secrets not configured. See docs/GETTING_STARTED.md for setup instructions."
+          fi
+
+      - name: Checkout
+        if: steps.check.outputs.has-secrets == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - name: Setup Node.js
+        if: steps.check.outputs.has-secrets == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: "npm"
+
+      - name: Install dependencies
+        if: steps.check.outputs.has-secrets == 'true'
+        run: npm ci
+
+      # Boat base pruning runs through uv after the control plane deploys.
+      - name: Setup uv
+        if: steps.check.outputs.has-secrets == 'true'
+        uses: astral-sh/setup-uv@v7
+
+      - name: Deploy Workers
+        if: steps.check.outputs.has-secrets == 'true'
+        run: node scripts/cloudflare-deploy/deploy.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOYMENT_NAME: ${{ vars.DEPLOYMENT_NAME || secrets.DEPLOYMENT_NAME }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_WORKER_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKER_SUBDOMAIN || secrets.CLOUDFLARE_WORKER_SUBDOMAIN }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID || secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_CUSTOM_DOMAIN: ${{ vars.CLOUDFLARE_CUSTOM_DOMAIN || secrets.CLOUDFLARE_CUSTOM_DOMAIN }}
+          R2_MEDIA_BUCKET_NAME: ${{ vars.R2_MEDIA_BUCKET_NAME || secrets.R2_MEDIA_BUCKET_NAME }}
+          WEB_PLATFORM: ${{ vars.WEB_PLATFORM || secrets.WEB_PLATFORM }}
+          SANDBOX_PROVIDER: ${{ vars.SANDBOX_PROVIDER || secrets.SANDBOX_PROVIDER }}
+          APP_NAME: ${{ vars.APP_NAME || secrets.APP_NAME }}
+          APP_ICON_URL: ${{ vars.APP_ICON_URL || secrets.APP_ICON_URL }}
+          GH_OAUTH_CLIENT_ID: ${{ vars.GH_OAUTH_CLIENT_ID || secrets.GH_OAUTH_CLIENT_ID }}
+          GH_OAUTH_CLIENT_SECRET: ${{ secrets.GH_OAUTH_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID || secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GH_APP_ID: ${{ vars.GH_APP_ID || secrets.GH_APP_ID }}
+          GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          GH_APP_INSTALLATION_ID: ${{ vars.GH_APP_INSTALLATION_ID || secrets.GH_APP_INSTALLATION_ID }}
+          GH_REVIEWER_APP_ID: ${{ vars.GH_REVIEWER_APP_ID || secrets.GH_REVIEWER_APP_ID }}
+          GH_REVIEWER_APP_PRIVATE_KEY: ${{ secrets.GH_REVIEWER_APP_PRIVATE_KEY }}
+          GH_REVIEWER_APP_INSTALLATION_ID: ${{ vars.GH_REVIEWER_APP_INSTALLATION_ID || secrets.GH_REVIEWER_APP_INSTALLATION_ID }}
+          GH_REVIEWER_USERNAME: ${{ vars.GH_REVIEWER_USERNAME || secrets.GH_REVIEWER_USERNAME }}
+          ALLOWED_USERS: ${{ vars.ALLOWED_USERS || secrets.ALLOWED_USERS }}
+          ALLOWED_EMAIL_DOMAINS: ${{ vars.ALLOWED_EMAIL_DOMAINS || secrets.ALLOWED_EMAIL_DOMAINS }}
+          ALLOWED_EMAILS: ${{ vars.ALLOWED_EMAILS || secrets.ALLOWED_EMAILS }}
+          ALLOWED_GITHUB_ORGS: ${{ vars.ALLOWED_GITHUB_ORGS || secrets.ALLOWED_GITHUB_ORGS }}
+          UNSAFE_ALLOW_ALL_USERS: ${{ vars.UNSAFE_ALLOW_ALL_USERS || secrets.UNSAFE_ALLOW_ALL_USERS }}
+          ENABLE_SLACK_BOT: ${{ vars.ENABLE_SLACK_BOT || secrets.ENABLE_SLACK_BOT }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          SLACK_BOT_DEFAULT_MODEL: ${{ vars.SLACK_BOT_DEFAULT_MODEL || secrets.SLACK_BOT_DEFAULT_MODEL }}
+          ENABLE_GITHUB_BOT: ${{ vars.ENABLE_GITHUB_BOT || secrets.ENABLE_GITHUB_BOT }}
+          GH_WEBHOOK_SECRET: ${{ secrets.GH_WEBHOOK_SECRET }}
+          GH_BOT_USERNAME: ${{ vars.GH_BOT_USERNAME || secrets.GH_BOT_USERNAME }}
+          GH_BOT_DEFAULT_MODEL: ${{ vars.GH_BOT_DEFAULT_MODEL || secrets.GH_BOT_DEFAULT_MODEL }}
+          ENABLE_LINEAR_BOT: ${{ vars.ENABLE_LINEAR_BOT || secrets.ENABLE_LINEAR_BOT }}
+          LINEAR_CLIENT_ID: ${{ vars.LINEAR_CLIENT_ID || secrets.LINEAR_CLIENT_ID }}
+          LINEAR_CLIENT_SECRET: ${{ secrets.LINEAR_CLIENT_SECRET }}
+          LINEAR_WEBHOOK_SECRET: ${{ secrets.LINEAR_WEBHOOK_SECRET }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          LINEAR_BOT_DEFAULT_MODEL: ${{ vars.LINEAR_BOT_DEFAULT_MODEL || secrets.LINEAR_BOT_DEFAULT_MODEL }}
+          ENABLE_SERVICE_BINDINGS: ${{ vars.ENABLE_SERVICE_BINDINGS || secrets.ENABLE_SERVICE_BINDINGS }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLASSIFICATION_ANTHROPIC_API_KEY: ${{ secrets.CLASSIFICATION_ANTHROPIC_API_KEY }}
+          CLASSIFICATION_OPENAI_API_KEY: ${{ secrets.CLASSIFICATION_OPENAI_API_KEY }}
+          CLASSIFICATION_BEDROCK_API_KEY: ${{ secrets.CLASSIFICATION_BEDROCK_API_KEY }}
+          CLASSIFICATION_MODEL: ${{ vars.CLASSIFICATION_MODEL }}
+          CLASSIFICATION_REASONING_EFFORT: ${{ vars.CLASSIFICATION_REASONING_EFFORT }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+          REPO_SECRETS_ENCRYPTION_KEY: ${{ secrets.REPO_SECRETS_ENCRYPTION_KEY }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          PROVIDER_ACCOUNTS_ENCRYPTION_KEY: ${{ secrets.PROVIDER_ACCOUNTS_ENCRYPTION_KEY }}
+          IMAGE_CALLBACK_TOKEN_PEPPER: ${{ secrets.IMAGE_CALLBACK_TOKEN_PEPPER }}
+          SERVICE_AUTH_SECRET_WEB: ${{ secrets.SERVICE_AUTH_SECRET_WEB }}
+          SERVICE_AUTH_SECRET_SLACK_BOT: ${{ secrets.SERVICE_AUTH_SECRET_SLACK_BOT }}
+          SERVICE_AUTH_SECRET_GITHUB_BOT: ${{ secrets.SERVICE_AUTH_SECRET_GITHUB_BOT }}
+          SERVICE_AUTH_SECRET_LINEAR_BOT: ${{ secrets.SERVICE_AUTH_SECRET_LINEAR_BOT }}
+          MODAL_WORKSPACE: ${{ vars.MODAL_WORKSPACE || secrets.MODAL_WORKSPACE }}
+          MODAL_ENVIRONMENT: ${{ vars.MODAL_ENVIRONMENT || secrets.MODAL_ENVIRONMENT }}
+          MODAL_ENVIRONMENT_WEB_SUFFIX: ${{ vars.MODAL_ENVIRONMENT_WEB_SUFFIX || secrets.MODAL_ENVIRONMENT_WEB_SUFFIX }}
+          MODAL_API_SECRET: ${{ secrets.MODAL_API_SECRET }}
+          DAYTONA_API_URL: ${{ vars.DAYTONA_API_URL || secrets.DAYTONA_API_URL }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          DAYTONA_BASE_SNAPSHOT: ${{ vars.DAYTONA_BASE_SNAPSHOT || secrets.DAYTONA_BASE_SNAPSHOT }}
+          DAYTONA_BASE_SNAPSHOT_MEMORY_GIB: ${{ vars.DAYTONA_BASE_SNAPSHOT_MEMORY_GIB }}
+          DAYTONA_TARGET: ${{ vars.DAYTONA_TARGET || secrets.DAYTONA_TARGET }}
+          DAYTONA_TOOLBOX_API_URL: ${{ vars.DAYTONA_TOOLBOX_API_URL || secrets.DAYTONA_TOOLBOX_API_URL }}
+          DAYTONA_PREBUILDS_ENABLED: ${{ vars.DAYTONA_PREBUILDS_ENABLED || secrets.DAYTONA_PREBUILDS_ENABLED }}
+          VERCEL_SANDBOX_TOKEN: ${{ secrets.VERCEL_SANDBOX_TOKEN }}
+          VERCEL_SANDBOX_PROJECT_ID: ${{ vars.VERCEL_SANDBOX_PROJECT_ID || secrets.VERCEL_SANDBOX_PROJECT_ID }}
+          VERCEL_SANDBOX_TEAM_ID: ${{ vars.VERCEL_SANDBOX_TEAM_ID || secrets.VERCEL_SANDBOX_TEAM_ID }}
+          VERCEL_SANDBOX_API_BASE_URL: ${{ vars.VERCEL_SANDBOX_API_BASE_URL || secrets.VERCEL_SANDBOX_API_BASE_URL }}
+          VERCEL_BASE_SNAPSHOT_ID: ${{ vars.VERCEL_BASE_SNAPSHOT_ID || secrets.VERCEL_BASE_SNAPSHOT_ID }}
+          VERCEL_SANDBOX_RUNTIME: ${{ vars.VERCEL_SANDBOX_RUNTIME || secrets.VERCEL_SANDBOX_RUNTIME }}
+          VERCEL_SNAPSHOT_EXPIRATION_MS: ${{ vars.VERCEL_SNAPSHOT_EXPIRATION_MS || secrets.VERCEL_SNAPSHOT_EXPIRATION_MS }}
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
+          E2B_API_URL: ${{ vars.E2B_API_URL || secrets.E2B_API_URL }}
+          E2B_TEMPLATE_ID: ${{ vars.E2B_TEMPLATE_ID || secrets.E2B_TEMPLATE_ID }}
+          E2B_SANDBOX_TIMEOUT_SECONDS: ${{ vars.E2B_SANDBOX_TIMEOUT_SECONDS || secrets.E2B_SANDBOX_TIMEOUT_SECONDS }}
+          E2B_AUTO_PAUSE: ${{ vars.E2B_AUTO_PAUSE || secrets.E2B_AUTO_PAUSE }}
+          E2B_TEMPLATE_CPU: ${{ vars.E2B_TEMPLATE_CPU || secrets.E2B_TEMPLATE_CPU }}
+          E2B_TEMPLATE_MEMORY_MB: ${{ vars.E2B_TEMPLATE_MEMORY_MB || secrets.E2B_TEMPLATE_MEMORY_MB }}
+          BOAT_API_KEY: ${{ secrets.BOAT_API_KEY }}
+          BOAT_API_URL: ${{ vars.BOAT_API_URL || secrets.BOAT_API_URL }}
+          BOAT_BASE_SNAPSHOT: ${{ vars.BOAT_BASE_SNAPSHOT || secrets.BOAT_BASE_SNAPSHOT }}
+          BOAT_ORG: ${{ vars.BOAT_ORG || secrets.BOAT_ORG }}
+          BOAT_SANDBOX_TYPE: ${{ vars.BOAT_SANDBOX_TYPE || secrets.BOAT_SANDBOX_TYPE }}
+          SESSION_DO_LOCATION_HINT: ${{ vars.SESSION_DO_LOCATION_HINT }}
+          SANDBOX_INACTIVITY_TIMEOUT_MS: ${{ vars.SANDBOX_INACTIVITY_TIMEOUT_MS || secrets.SANDBOX_INACTIVITY_TIMEOUT_MS }}
+          SANDBOX_UNATTENDED_INACTIVITY_TIMEOUT_MS: ${{ vars.SANDBOX_UNATTENDED_INACTIVITY_TIMEOUT_MS || secrets.SANDBOX_UNATTENDED_INACTIVITY_TIMEOUT_MS }}
+          SANDBOX_BOOT_TIMEOUT_MS: ${{ vars.SANDBOX_BOOT_TIMEOUT_MS || secrets.SANDBOX_BOOT_TIMEOUT_MS }}
+          TEAMS_ENFORCEMENT: ${{ vars.TEAMS_ENFORCEMENT || secrets.TEAMS_ENFORCEMENT }}
+
+      - name: Post Deploy Results
+        if: always() && steps.check.outputs.has-secrets == 'true'
+        run: |
+          echo "### Cloudflare Deploy Results"
+          echo "Status: ${{ job.status }}"
+          echo "Commit: ${{ needs.gate.outputs.sha }}"
+          echo "Environment: ${{ inputs.environment }}"
