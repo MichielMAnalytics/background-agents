@@ -11,14 +11,25 @@ import {
   checkSenderPermission,
 } from "./github-auth";
 import { resolveSessionTarget } from "./session-target";
-import { createSession, sendPrompt } from "./session-client";
+import { supersedeInFlightReview } from "./review-supersession";
+import { createSession, PromptDeliveryError, sendPrompt } from "./session-client";
 import { getGitHubConfig, type ResolvedGitHubConfig } from "./utils/integration-config";
 import { resolveModelSelection } from "./model-selection";
 import type { ParseInlinePromptFlagsResult } from "@open-inspect/shared/inline-prompt-flags";
+import { REVIEW_SUPERSEDED_CODE } from "@open-inspect/shared/types/session-api";
 
 export type HandlerResult =
   | { outcome: "processed"; session_id: string; message_id: string; handler_action: string }
   | { outcome: "skipped"; skip_reason: string };
+
+/**
+ * Prompt refusals that mean a newer review of the same pull request displaced this one: the
+ * control plane's fence for a displaced review, or the session already cancelled.
+ */
+const SUPERSEDED_PROMPT_CODES: ReadonlySet<string> = new Set([
+  REVIEW_SUPERSEDED_CODE,
+  "SESSION_NOT_PROMPTABLE",
+]);
 
 const githubRouteResponseSchema = z.discriminatedUnion("via", [
   z.object({ via: z.literal("workspace"), teamId: z.null() }),
@@ -291,11 +302,51 @@ export async function startSession(
         inline_model_override: modelSelection.overridden,
       });
 
+      const isReview = action === "review" || action === "auto_review";
+      if (isReview) {
+        // Best effort: a review must still run when the previous one cannot be
+        // cancelled, or when supersession itself is unavailable.
+        try {
+          const supersession = await supersedeInFlightReview(env, traceId, {
+            sessionId,
+            repositoryId: repo.id,
+            pullNumber,
+          });
+          log.info("review.superseded_previous", {
+            ...meta,
+            session_id: sessionId,
+            cancelled_session_ids: supersession.cancelledSessionIds,
+            cancel_pending_session_ids: supersession.cancelPendingSessionIds,
+          });
+        } catch (err) {
+          log.warn("review.supersession_failed", {
+            ...meta,
+            session_id: sessionId,
+            error: err instanceof Error ? err : new Error(String(err)),
+          });
+        }
+      }
+
       const prompt = params.buildPrompt(config);
-      const messageId = await sendPrompt(env, traceId, sessionId, {
-        content: prompt,
-        authorId: `github:${sender.id}`,
-      });
+      let messageId: string;
+      try {
+        messageId = await sendPrompt(env, traceId, sessionId, {
+          content: prompt,
+          authorId: `github:${sender.id}`,
+        });
+      } catch (err) {
+        if (
+          isReview &&
+          err instanceof PromptDeliveryError &&
+          err.status === 409 &&
+          err.code !== undefined &&
+          SUPERSEDED_PROMPT_CODES.has(err.code)
+        ) {
+          log.info("review.superseded", { ...meta, session_id: sessionId, code: err.code });
+          return { outcome: "skipped", skip_reason: "review_superseded" };
+        }
+        throw err;
+      }
       log.info("prompt.sent", {
         ...meta,
         session_id: sessionId,

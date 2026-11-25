@@ -71,6 +71,13 @@ follow-up after a draft becomes ready, mention the bot in a PR comment.
 The agent can submit a general review comment, approve the PR, request changes, or add inline review
 comments when useful.
 
+When a review request or auto-review starts a new review session, Open-Inspect attempts to cancel
+the previous review session for that PR. Cancellation is best effort, so both reviews can run for a
+while: the older session may finish a turn it had already started, and if the cancel fails the new
+review still runs, the older session is refused any further review prompt from the bot, and the
+cancel is retried when the PR's next review starts. `@mention` sessions are independent of reviews
+and are never cancelled this way.
+
 An explicitly allowed App bot can trigger review of its own PR. By default, that self-review can
 only comment, not approve or request changes: GitHub does not allow a PR author to approve their own
 PR. An optional separate reviewer App lets the review approve those PRs instead. Reviews of PRs

@@ -31,6 +31,16 @@ describe("route policy table", () => {
     expect(routeFor("POST", "/github/route")).toBeUndefined();
   });
 
+  it("restricts review supersession to the github-bot service", () => {
+    expect(routeFor("POST", "/github/reviews/supersede")).toMatchObject({
+      authentication: { kind: "service" },
+      authorization: { kind: "service", services: ["github-bot"] },
+      supportedScmProviders: ["github"],
+      cacheControl: "private, no-store",
+    });
+    expect(routeFor("GET", "/github/reviews/supersede")).toBeUndefined();
+  });
+
   it("does not expose a member-facing team activity route", () => {
     expect(routeFor("GET", "/teams/team-1/activity")).toBeUndefined();
     expect(routeFor("GET", "/audit-events")?.authorization).toMatchObject({
@@ -40,11 +50,11 @@ describe("route policy table", () => {
   });
 
   it("publishes the complete canonical route catalog", () => {
-    expect(routes).toHaveLength(261);
+    expect(routes).toHaveLength(262);
 
     const paths = routes.map((route) => route.path);
-    expect(new Set(paths).size).toBe(200);
-    expect(new Set(routes.map((route) => `${route.method}:${route.path}`)).size).toBe(261);
+    expect(new Set(paths).size).toBe(201);
+    expect(new Set(routes.map((route) => `${route.method}:${route.path}`)).size).toBe(262);
     expect(routeFor("POST", "/sessions/session-1/sandbox-bootstrap")).toMatchObject({
       authentication: { kind: "handler-authenticated" },
       supportedScmProviders: "all",

@@ -349,6 +349,33 @@ export const sendPromptResponseSchema = z.object({
 
 export type SendPromptResponse = z.infer<typeof sendPromptResponseSchema>;
 
+/**
+ * Control-plane path the github-bot calls, actorless, once a review session exists and before
+ * prompting it: it records the session as its pull request's current review and cancels the one
+ * it replaced. Shared so the bot's URL and the route cannot drift apart.
+ */
+export const GITHUB_REVIEW_SUPERSEDE_PATH = "/github/reviews/supersede";
+
+export const githubReviewSupersedeRequestSchema = z.strictObject({
+  sessionId: z.string().trim().min(1).max(128),
+  repositoryId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  pullNumber: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+
+export type GitHubReviewSupersedeRequest = z.infer<typeof githubReviewSupersedeRequestSchema>;
+
+export const githubReviewSupersedeResponseSchema = z.object({
+  /** Displaced reviews whose cancel succeeded (or that had already ended). */
+  cancelledSessionIds: z.array(z.string()),
+  /** Displaced reviews whose cancel failed; the next review of the pull request retries them. */
+  cancelPendingSessionIds: z.array(z.string()),
+});
+
+export type GitHubReviewSupersedeResponse = z.infer<typeof githubReviewSupersedeResponseSchema>;
+
+/** Error code of the 409 the control plane returns for a github-bot prompt to a displaced review. */
+export const REVIEW_SUPERSEDED_CODE = "review_superseded";
+
 /** @deprecated Import SessionListResponse from ./sessions. */
 export type ListSessionsResponse = SessionListResponse;
 

@@ -3,6 +3,7 @@ import { admit } from "../routing/admit";
 import type { ControlPlaneHonoEnv } from "../routing/hono-env";
 import {
   callbackContextSchema,
+  REVIEW_SUPERSEDED_CODE,
   sendPromptRequestSchema,
   type CallbackContext,
 } from "@open-inspect/shared/types/session-api";
@@ -17,6 +18,7 @@ import {
   mayAttachCallbackContext,
 } from "../routing/identity-enforcement";
 import { resolveGitHubCredentialAuthority } from "../source-control/github-credential-authority";
+import { GitHubPrReviewStore } from "../db/github-pr-review-store";
 import { SessionIndexStore } from "../db/session-index";
 import { UserStore } from "../db/user-store";
 import { createLogger } from "../logger";
@@ -64,6 +66,20 @@ export async function handleSessionPrompt(
     return json(promptValidationError(bodyResult.error, rawBody), 400);
   }
   const body = bodyResult.data;
+
+  // A newer review of the same pull request displaced this one and could not
+  // cancel it yet: refuse the github-bot's prompt so a delayed or retried
+  // delivery cannot start a second review. Other callers are unaffected.
+  if (
+    ctx.principal?.kind === "service" &&
+    ctx.principal.service === "github-bot" &&
+    (await new GitHubPrReviewStore(ctx.db).isSuperseded(sessionId))
+  ) {
+    return json(
+      { error: "Superseded by a newer pull request review", code: REVIEW_SUPERSEDED_CODE },
+      409
+    );
+  }
 
   // Uploading an attachment refuses tokens, so a token has none of its own to reference; an id it
   // names could only be someone else's upload.

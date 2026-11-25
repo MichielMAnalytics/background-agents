@@ -56,6 +56,11 @@ Key design decisions:
   sandbox.
 - **No session reuse**: Every non-duplicate webhook delivery creates a fresh session. Delivery
   dedupe is handled separately in KV using `X-GitHub-Delivery`.
+- **Replacing an earlier review**: A new auto-review or review request becomes the PR's current
+  review, and the control plane attempts to cancel the previous review session. This is best effort:
+  the previous session may finish a turn already underway, or keep running if its cancel fails
+  (retried on the PR's next review). Mention sessions are independent: they neither cancel reviews
+  nor are cancelled by them.
 - **No PR context fetching**: The bot only uses metadata already in the webhook payload. The agent
   gathers additional context (diffs, prior comments, file contents) itself using `gh` CLI.
 
@@ -167,9 +172,14 @@ processing.
    explicitly listed in `allowedTriggerUsers`
 3. Post eyes reaction on the PR (fire-and-forget)
 4. Create session via control plane
-5. Send code review prompt (includes PR metadata + `gh` CLI instructions). Reviews of the bot's own
-   PRs use `COMMENT` unless a separate reviewer App submits the review, because GitHub does not
-   allow pull request authors to approve their own PRs.
+5. Record the session as the PR's current review (`POST /github/reviews/supersede`, actorless). The
+   control plane best-effort cancels the previous review session for the same PR and retries any
+   earlier cancel that failed. A failure here is logged and does not stop the review.
+6. Send code review prompt (includes PR metadata + `gh` CLI instructions). If the prompt is refused
+   because a newer review already displaced this session (`review_superseded` or
+   `SESSION_NOT_PROMPTABLE`), the handler skips. Reviews of the bot's own PRs use `COMMENT` unless a
+   separate reviewer App submits the review, because GitHub does not allow pull request authors to
+   approve their own PRs.
 
 **Review Requested (compatibility path):**
 
@@ -181,7 +191,8 @@ its re-request button names that App rather than the webhook App; both logins ar
    (case-insensitive) — return early if not
 2. Post eyes reaction on the PR (fire-and-forget)
 3. Create session via control plane
-4. Send code review prompt (includes PR metadata + `gh` CLI instructions). As with auto-review,
+4. Record the session as the PR's current review and cancel the previous one, as for auto-review
+5. Send code review prompt (includes PR metadata + `gh` CLI instructions). As with auto-review,
    reviews of the bot's own PRs use `COMMENT`.
 
 **Issue Comment:**

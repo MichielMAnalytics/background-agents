@@ -36,6 +36,7 @@ export async function cleanD1Tables(): Promise<void> {
     DELETE FROM team_channel_bindings;
     DELETE FROM team_repository_grants;
     DELETE FROM team_memberships;
+    DELETE FROM github_pr_review_sessions;
     DELETE FROM sessions;
     DELETE FROM model_provider_account_authorization_attempts;
     DELETE FROM model_provider_account_authorizations;
