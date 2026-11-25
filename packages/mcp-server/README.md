@@ -185,14 +185,17 @@ Ask the agent to open one in a prompt.
     an `event_type` and usually a `trigger_config` of conditions.
   - A `sentry` trigger also needs `sentry_client_secret`.
   - A `webhook` automation returns the key that calls it, shown once.
+  - A recurring schedule may set `max_concurrent_runs` (1–10, default 1): how many scheduled and
+    manual firings may be in progress at once.
 
   The automation is created **enabled**, so a schedule starts firing at its next occurrence. No tool
   edits or pauses an automation, so create it with the schedule it should keep, and fix a mistake in
   the web UI.
 
 - `trigger_automation` runs one now, outside its schedule. It returns the invocation id and its
-  child runs; read one with `get_automation_run`. It fails with `409` while a run of that automation
-  is already active. The invocation records its author as `unknown`, since a token does not
+  child runs; read one with `get_automation_run`. It fails with `409` while the automation already
+  has as many firings in progress as its `max_concurrent_runs` allows; a firing counts once however
+  many child runs it has. The invocation records its author as `unknown`, since a token does not
   establish whether a person or an agent fired it.
 
 ### Skill writes

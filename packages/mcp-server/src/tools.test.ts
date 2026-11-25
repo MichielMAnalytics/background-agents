@@ -532,6 +532,29 @@ describe("create_automation", () => {
     ).rejects.toThrow();
   });
 
+  it("forwards the concurrent run limit and refuses one outside its range", async () => {
+    const { client, post } = fakeClient({ post: () => ({ automation: { id: "auto_1" } }) });
+
+    await tool("create_automation").run(client, {
+      name: "Implement tickets",
+      instructions: "Pick the next ticket",
+      schedule_cron: "*/5 * * * *",
+      max_concurrent_runs: 10,
+    });
+
+    expect(post).toHaveBeenCalledWith(
+      "/automations",
+      expect.objectContaining({ maxConcurrentRuns: 10 })
+    );
+    await expect(
+      tool("create_automation").run(client, {
+        name: "Implement tickets",
+        instructions: "Pick the next ticket",
+        max_concurrent_runs: 11,
+      })
+    ).rejects.toThrow();
+  });
+
   it("keeps the caller's timezone rather than the default", async () => {
     const { client, post } = fakeClient({ post: () => ({ automation: { id: "auto_1" } }) });
 

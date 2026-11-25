@@ -10,6 +10,7 @@ import {
   type TriggerConfig,
 } from "@open-inspect/shared/triggers";
 import {
+  DEFAULT_AUTOMATION_MAX_CONCURRENT_RUNS,
   MAX_AUTOMATION_NAME_LENGTH,
   validateAutomationTargetCounts,
   type Automation,
@@ -41,6 +42,8 @@ export interface AutomationFormValues {
   maxRetries?: number;
   /** Sandbox timeout override for every trigger type; null inherits. */
   sandboxTimeoutMs?: number | null;
+  /** Firings allowed in flight at once; submitted for recurring schedule triggers only. */
+  maxConcurrentRuns?: number;
   instructions: string;
   triggerType: AutomationTriggerType;
   eventType?: string;
@@ -56,6 +59,7 @@ export interface AutomationTriggerDraft {
   scheduleOnceAt: string;
   scheduleTz: string;
   maxRetries: number;
+  maxConcurrentRuns: number;
   eventType: string;
   conditions: TriggerCondition[];
   /** Slack triggers only: let other bots' messages trigger the automation. */
@@ -134,6 +138,7 @@ export function createAutomationFormDraft(
         initialValues.scheduleOnceAt != null ? toLocalDateTime(initialValues.scheduleOnceAt) : "",
       scheduleTz: initialValues.scheduleTz ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       maxRetries: initialValues.maxRetries ?? 0,
+      maxConcurrentRuns: initialValues.maxConcurrentRuns ?? DEFAULT_AUTOMATION_MAX_CONCURRENT_RUNS,
       eventType: initialValues.eventType ?? "",
       conditions: initialValues.triggerConfig?.conditions ?? [],
       includeBotMessages: initialValues.triggerConfig?.slack?.includeBotMessages === true,
@@ -163,6 +168,7 @@ export function automationToFormValues(automation: Automation): InitialAutomatio
     scheduleOnceAt: automation.scheduleOnceAt ?? undefined,
     maxRetries: automation.maxRetries,
     sandboxTimeoutMs: automation.sandboxTimeoutMs,
+    maxConcurrentRuns: automation.maxConcurrentRuns,
     instructions: automation.instructions,
     triggerType: automation.triggerType,
     eventType: automation.eventType ?? undefined,
@@ -459,7 +465,10 @@ function buildSubmissionValues({
       maxRetries: draft.trigger.maxRetries,
       ...(draft.trigger.scheduleMode === "once"
         ? { scheduleOnceAt }
-        : { scheduleCron: draft.trigger.scheduleCron }),
+        : {
+            scheduleCron: draft.trigger.scheduleCron,
+            maxConcurrentRuns: draft.trigger.maxConcurrentRuns,
+          }),
       scheduleTz:
         mode === "create" && draft.trigger.scheduleMode === "once"
           ? Intl.DateTimeFormat().resolvedOptions().timeZone

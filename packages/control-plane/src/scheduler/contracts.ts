@@ -58,7 +58,7 @@ export class AutomationTriggerBlockedError extends Error {
     super(
       reason === "team_grants_changed"
         ? "Team repository grants changed during admission"
-        : "An active run already exists"
+        : "The automation is at its concurrent run limit"
     );
     this.name = "AutomationTriggerBlockedError";
   }

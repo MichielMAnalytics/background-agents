@@ -301,7 +301,7 @@ describe("one-shot scheduled automations (real D1)", () => {
     const store = await createOneShot("race", at);
     // The cheap pre-check misses a run that the atomic admission sees.
     await seedRun(makeRunRow("race", { status: "running", started_at: Date.now() }));
-    vi.spyOn(AutomationStore.prototype, "getActiveRunForAutomation").mockResolvedValue(null);
+    vi.spyOn(AutomationStore.prototype, "isAtConcurrencyLimit").mockResolvedValue(false);
     const { scheduler, runtime } = createScheduler();
     await scheduler.tick();
     expect(runtime).not.toHaveBeenCalled();

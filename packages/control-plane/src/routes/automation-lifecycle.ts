@@ -171,7 +171,7 @@ async function handleTriggerAutomation(
             },
             409
           )
-        : error("A run is already active for this automation", 409);
+        : error("This automation is already at its concurrent run limit", 409);
     }
     if (triggerError instanceof AutomationExecutionUnauthorizedError) {
       return json(

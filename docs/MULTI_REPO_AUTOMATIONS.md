@@ -147,13 +147,17 @@ automations past the budget stay overdue and are picked up next tick.
 
 ### What happens if the next schedule fires while an invocation is active?
 
-Answer: the firing is skipped — recorded as a childless invocation with skip reason
-`concurrent_run_active` — and the schedule advances. Scheduled and manual firings block on the whole
-automation; event firings block per concurrency key (an active PR-42 run does not block PR-43). A
-manual "Trigger Now" against an active invocation is rejected with `409` rather than recorded.
+Answer: by default the firing is skipped — recorded as a childless invocation with skip reason
+`concurrent_run_active` — and the schedule advances. More precisely, a firing is skipped only when
+the automation is at its concurrent run limit: scheduled and manual firings block once the
+automation holds `max_concurrent_runs` invocations with an active run (default 1; a schedule
+automation may raise it to 10), counting invocations rather than runs so one fan-out firing holds
+one slot; event firings block per concurrency key (an active PR-42 run does not block PR-43). A
+manual "Trigger Now" at the limit is rejected with `409` rather than recorded.
 
-Reasoning: recurring maintenance should not overlap itself. Two details are load-bearing: the skip
-is recorded **atomically with the schedule advance** (one D1 batch), so a crash between the two can
+Reasoning: by default recurring maintenance should not overlap itself; an automation whose work is
+safe to overlap opts in by raising `max_concurrent_runs`. Two details are load-bearing: the skip is
+recorded **atomically with the schedule advance** (one D1 batch), so a crash between the two can
 never make the tick re-collide on the same cron slot forever; and skip invocations never carry the
 event `trigger_key`, so a skip never consumes the dedup slot of the real event delivery.
 

@@ -151,7 +151,7 @@ function invocationHarness() {
         .fn<AutomationInvocationServiceDeps["store"]["resolveCanonicalOwner"]>()
         .mockImplementation(async (row) => row),
       getInvocationIdByTriggerKey: vi.fn().mockResolvedValue(null),
-      getActiveRunForAutomation: vi.fn().mockResolvedValue(null),
+      isAtConcurrencyLimit: vi.fn().mockResolvedValue(false),
       getActiveRunForKey: vi.fn().mockResolvedValue(null),
       getRepositoriesForAutomation: vi.fn().mockResolvedValue([]),
       getEnvironmentsForAutomation: vi.fn().mockResolvedValue([]),

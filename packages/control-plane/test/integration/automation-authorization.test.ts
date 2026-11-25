@@ -229,6 +229,7 @@ describe("automation router authorization", () => {
       ...row,
       max_retries: 0,
       sandbox_timeout_ms: null,
+      max_concurrent_runs: 1,
     });
     expect(
       (await store.getEnvironmentsForAutomation(row.id)).map((member) => member.environment_id)

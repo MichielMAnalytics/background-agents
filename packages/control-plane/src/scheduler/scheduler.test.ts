@@ -174,8 +174,8 @@ let capturedInvocationParams: Array<{ children: Array<Record<string, unknown>> }
 function createMockStore() {
   return {
     getOverdueAutomations: vi.fn().mockResolvedValue([]),
-    getActiveRunForAutomation: vi.fn().mockResolvedValue(null),
     getActiveRunForKey: vi.fn().mockResolvedValue(null),
+    isAtConcurrencyLimit: vi.fn().mockResolvedValue(false),
     getLatestContinuableRun: vi.fn().mockResolvedValue(null),
     getSessionRunsForContinuityKey: vi.fn().mockResolvedValue([]),
     markRunFirstPromptQueued: vi.fn().mockResolvedValue(undefined),
@@ -1469,10 +1469,7 @@ describe("Scheduler", () => {
 
     it("records an atomic childless skip when a run is active (concurrency guard)", async () => {
       mockStore.getOverdueAutomations.mockResolvedValue([sampleAutomation]);
-      mockStore.getActiveRunForAutomation.mockResolvedValue({
-        id: "existing-run",
-        status: "running",
-      });
+      mockStore.isAtConcurrencyLimit.mockResolvedValue(true);
 
       const scheduler = createScheduler();
       const result = await scheduler.tick();
@@ -2272,11 +2269,11 @@ describe("Scheduler", () => {
 
     it("rejects when active run exists, recording nothing", async () => {
       mockStore.getById.mockResolvedValue(sampleAutomation);
-      mockStore.getActiveRunForAutomation.mockResolvedValue({ id: "run-active" });
+      mockStore.isAtConcurrencyLimit.mockResolvedValue(true);
 
       const scheduler = createScheduler();
       await expect(scheduler.trigger("auto-1", asPerson("user-1"))).rejects.toThrow(
-        "An active run already exists"
+        "The automation is at its concurrent run limit"
       );
       expect(mockStore.insertSkippedInvocation).not.toHaveBeenCalled();
       expect(mockStore.insertInvocationGuarded).not.toHaveBeenCalled();
@@ -2300,7 +2297,7 @@ describe("Scheduler", () => {
 
     it("creates an invocation and launches runs on successful trigger", async () => {
       mockStore.getById.mockResolvedValue(sampleAutomation);
-      mockStore.getActiveRunForAutomation.mockResolvedValue(null);
+      mockStore.isAtConcurrencyLimit.mockResolvedValue(false);
       mockStore.getRepositoriesForAutomation.mockResolvedValue([repositoryRow("auto-1")]);
 
       const stub = createMockSessionStub();
@@ -2347,7 +2344,7 @@ describe("Scheduler", () => {
 
     it("records the requester's provenance and bounds admission and launch by its ceiling", async () => {
       mockStore.getById.mockResolvedValue(sampleAutomation);
-      mockStore.getActiveRunForAutomation.mockResolvedValue(null);
+      mockStore.isAtConcurrencyLimit.mockResolvedValue(false);
       mockStore.getRepositoriesForAutomation.mockResolvedValue([repositoryRow("auto-1")]);
       const permissionCeiling = [
         "automations.trigger.own",
@@ -2376,7 +2373,7 @@ describe("Scheduler", () => {
 
     it("rejects when every launch fails, still recording the failed children", async () => {
       mockStore.getById.mockResolvedValue(sampleAutomation);
-      mockStore.getActiveRunForAutomation.mockResolvedValue(null);
+      mockStore.isAtConcurrencyLimit.mockResolvedValue(false);
       mockStore.getRepositoriesForAutomation.mockResolvedValue([repositoryRow("auto-1")]);
       mockStore.updateRun.mockRejectedValue(new Error("D1 timeout"));
       mockStore.getInvocationRunAggregate.mockResolvedValue(

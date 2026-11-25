@@ -176,6 +176,7 @@ describe("automation cron submission", () => {
     await user.click(screen.getByRole("combobox", { name: "Schedule" }));
     await user.click(await screen.findByRole("option", { name: "Run once" }));
     expect(screen.getByRole("combobox", { name: "Retries" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Concurrent runs" })).not.toBeInTheDocument();
     const input = screen.getByLabelText("Run at");
     fireEvent.change(input, { target: { value: "2020-01-01T09:00:42.123" } });
     expect(screen.getByRole("button", { name: "Create Automation" })).toBeDisabled();
@@ -193,6 +194,7 @@ describe("automation cron submission", () => {
       })
     );
     expect(onSubmit.mock.calls[0][0]).not.toHaveProperty("scheduleCron");
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty("maxConcurrentRuns");
   });
 
   it("allows editing instructions after a one-shot has fired without changing its time", () => {
@@ -657,6 +659,59 @@ describe("automation cron submission", () => {
     fireEvent.submit(container.querySelector("form")!);
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ maxRetries: 3 }));
+  });
+
+  it("submits the concurrent run limit chosen for a recurring schedule", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const { container } = render(
+      <AutomationForm
+        mode="edit"
+        submitting={false}
+        onSubmit={onSubmit}
+        initialValues={{
+          name: "Daily review",
+          repositories: singleRepository,
+          model: "openai/gpt-5.4",
+          scheduleCron: "0 9 * * *",
+          scheduleTz: "UTC",
+          maxConcurrentRuns: 3,
+          instructions: "Review the repo.",
+        }}
+      />
+    );
+
+    const concurrentRuns = screen.getByRole("combobox", { name: "Concurrent runs" });
+    expect(concurrentRuns).toHaveTextContent("Up to 3");
+    await user.click(concurrentRuns);
+    await user.click(await screen.findByRole("option", { name: "Up to 10" }));
+    fireEvent.submit(container.querySelector("form")!);
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ maxConcurrentRuns: 10 }));
+  });
+
+  it("neither shows nor submits a concurrent run limit for an event-triggered automation", () => {
+    const onSubmit = vi.fn();
+    const { container } = render(
+      <AutomationForm
+        mode="edit"
+        submitting={false}
+        onSubmit={onSubmit}
+        initialValues={{
+          name: "Review PRs",
+          repositories: singleRepository,
+          model: "openai/gpt-5.4",
+          instructions: "Review incoming PRs.",
+          triggerType: "github_event",
+          eventType: "pull_request.opened",
+          triggerConfig: { conditions: [] },
+        }}
+      />
+    );
+
+    expect(screen.queryByRole("combobox", { name: "Concurrent runs" })).not.toBeInTheDocument();
+    fireEvent.submit(container.querySelector("form")!);
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty("maxConcurrentRuns");
   });
 
   it("neither shows nor submits launch retries for an event-triggered automation", () => {

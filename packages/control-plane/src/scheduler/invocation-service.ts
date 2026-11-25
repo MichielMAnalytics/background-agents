@@ -95,13 +95,13 @@ export interface AutomationInvocationServiceDeps {
     | "failWithdrawnRetry"
     | "getById"
     | "getRetriesToSettle"
-    | "getActiveRunForAutomation"
     | "getActiveRunForKey"
     | "getEnvironmentsForAutomation"
     | "getInvocationIdByTriggerKey"
     | "getRepositoriesForAutomation"
     | "insertInvocationGuarded"
     | "insertSkippedInvocation"
+    | "isAtConcurrencyLimit"
     | "resolveCanonicalOwner"
   >;
   teams: Pick<TeamStore, "getById">;
@@ -148,9 +148,10 @@ export class AutomationInvocationService {
       if (ownerId) return { outcome: "deduplicated", invocationId: ownerId };
     }
 
-    // Schedule/manual firings block on any active run of the automation; event
-    // firings block per concurrency key (an automation-wide guard would
-    // serialize unrelated events, e.g. PR #42 against PR #43).
+    // Schedule/manual firings block once the automation holds its
+    // max_concurrent_runs firings in flight; event firings block per
+    // concurrency key (an automation-wide guard would serialize unrelated
+    // events, e.g. PR #42 against PR #43).
     const overlapScope: InvocationOverlapScope =
       source === "event" && concurrencyKey !== null
         ? { kind: "concurrencyKey", concurrencyKey }
@@ -158,11 +159,11 @@ export class AutomationInvocationService {
 
     // Cheap pre-check; the conditional insert below re-applies the same predicate
     // atomically, so a race here only costs a wasted child build.
-    const activeRun =
+    const blocked =
       overlapScope.kind === "concurrencyKey"
-        ? await store.getActiveRunForKey(automation.id, concurrencyKey)
-        : await store.getActiveRunForAutomation(automation.id);
-    if (activeRun) {
+        ? (await store.getActiveRunForKey(automation.id, concurrencyKey)) !== null
+        : await store.isAtConcurrencyLimit(automation.id);
+    if (blocked) {
       return this.recordOverlapSkip(params, { advanceSchedule: true });
     }
 

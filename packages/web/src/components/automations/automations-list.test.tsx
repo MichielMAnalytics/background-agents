@@ -48,6 +48,7 @@ function makeAutomation(overrides: Partial<AutomationListItem> = {}): Automation
     consecutiveFailures: 0,
     maxRetries: 0,
     sandboxTimeoutMs: null,
+    maxConcurrentRuns: 1,
     createdBy: "user-1",
     userId: CURRENT_USER_ID,
     ownerTeamId: null,

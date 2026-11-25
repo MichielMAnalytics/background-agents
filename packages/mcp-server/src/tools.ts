@@ -11,6 +11,7 @@ import { harnessIdSchema } from "@open-inspect/shared/harnesses";
 import { automationTriggerTypeSchema, triggerConfigSchema } from "@open-inspect/shared/triggers";
 import {
   createAutomationRequestSchema,
+  MAX_AUTOMATION_CONCURRENT_RUNS,
   MAX_AUTOMATION_INSTRUCTIONS_LENGTH,
   MAX_AUTOMATION_INVOCATION_LIST_LIMIT,
   MAX_AUTOMATION_LIST_PAGE_SIZE,
@@ -677,6 +678,12 @@ export const TOOLS: ToolDefinition[] = [
         .min(1)
         .optional()
         .describe("Reasoning effort, where the selected model takes one"),
+      max_concurrent_runs: createAutomationRequestSchema.shape.maxConcurrentRuns.describe(
+        `Scheduled and manual firings allowed in flight at once (1–${MAX_AUTOMATION_CONCURRENT_RUNS}), ` +
+          "counting a firing that fans out over several targets once. At the limit a scheduled " +
+          "firing is skipped and trigger_automation is refused. Recurring schedules only; " +
+          "defaults to 1, one at a time."
+      ),
     },
     run: (client, args) => {
       const triggerType = args.trigger_type;
@@ -712,6 +719,7 @@ export const TOOLS: ToolDefinition[] = [
         harness: args.harness,
         model: args.model,
         reasoningEffort: args.reasoning_effort,
+        maxConcurrentRuns: args.max_concurrent_runs,
       } satisfies CreateAutomationRequest);
     },
   }),
@@ -728,8 +736,9 @@ export const TOOLS: ToolDefinition[] = [
       "using runs[].id, or its session with get_session_events on the run's sessionId. The run " +
       "uses no permission the token was not granted, even where the automation's owner holds " +
       "it. The schedule is untouched — a manual run is an extra run, not a replacement for the " +
-      "next scheduled one. Fails with 409 while a run of this automation is already active, " +
-      "and does not queue behind it.",
+      "next scheduled one. Fails with 409 while the automation already has as many firings " +
+      "in progress as its concurrent run limit allows (one by default; a firing counts once " +
+      "however many child runs it has), and does not queue behind them.",
     inputSchema: { automation_id: automationId },
     run: (client, args) =>
       client.post(`/automations/${encodeURIComponent(args.automation_id)}/trigger`, {}),

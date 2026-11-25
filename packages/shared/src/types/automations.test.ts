@@ -4,6 +4,8 @@ import {
   validateAutomationTargetCounts,
   createAutomationRequestSchema,
   listAutomationsResponseSchema,
+  DEFAULT_AUTOMATION_MAX_CONCURRENT_RUNS,
+  MAX_AUTOMATION_CONCURRENT_RUNS,
   MAX_AUTOMATION_RETRIES,
   MAX_AUTOMATION_SANDBOX_TIMEOUT_MS,
   MIN_AUTOMATION_SANDBOX_TIMEOUT_MS,
@@ -29,6 +31,7 @@ const automation = {
   nextRunAt: 123,
   consecutiveFailures: 0,
   maxRetries: 0,
+  maxConcurrentRuns: 1,
   createdBy: "user-1",
   userId: USER_ID,
   ownerTeamId: null,
@@ -63,6 +66,16 @@ describe("listAutomationsResponseSchema", () => {
       nextCursor: null,
     });
     expect(result.automations[0]!.maxRetries).toBe(0);
+  });
+
+  it("reads an automation from a control plane that predates concurrency bounds as serialized", () => {
+    const { maxConcurrentRuns: _maxConcurrentRuns, ...legacy } = automation;
+    const result = listAutomationsResponseSchema.parse({
+      automations: [legacy],
+      hasMore: false,
+      nextCursor: null,
+    });
+    expect(result.automations[0]!.maxConcurrentRuns).toBe(DEFAULT_AUTOMATION_MAX_CONCURRENT_RUNS);
   });
 
   it("reads an automation from a control plane that predates one-shot schedules", () => {
@@ -356,6 +369,19 @@ describe("automation request boundary contracts", () => {
       expect(parse(MAX_AUTOMATION_RETRIES + 1).success).toBe(false);
       expect(parse(-1).success).toBe(false);
       expect(parse(1.5).success).toBe(false);
+    }
+  );
+
+  it.each([createAutomationRequestSchema, updateAutomationRequestSchema])(
+    "bounds maxConcurrentRuns to whole numbers from 1 to MAX_AUTOMATION_CONCURRENT_RUNS",
+    (schema) => {
+      const parse = (maxConcurrentRuns: unknown) =>
+        schema.safeParse({ name: "Daily sync", instructions: "Run", maxConcurrentRuns });
+      expect(parse(1).success).toBe(true);
+      expect(parse(MAX_AUTOMATION_CONCURRENT_RUNS).success).toBe(true);
+      expect(parse(MAX_AUTOMATION_CONCURRENT_RUNS + 1).success).toBe(false);
+      expect(parse(0).success).toBe(false);
+      expect(parse(2.5).success).toBe(false);
     }
   );
 

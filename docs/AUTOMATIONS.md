@@ -60,13 +60,13 @@ reassigned without changing ownership.
 
 ### Trigger-Specific Fields
 
-| Trigger Type        | Additional Fields                                                                            |
-| ------------------- | -------------------------------------------------------------------------------------------- |
-| **Schedule**        | **Schedule** (**Recurring** or **Run once**), **Timezone** (recurring only), and **Retries** |
-| **Inbound Webhook** | No extra required fields                                                                     |
-| **Sentry Alert**    | **Event Type** and **Sentry Client Secret**                                                  |
-| **GitHub Event**    | **Event Type** and optional **Conditions**                                                   |
-| **Slack Message**   | **Conditions** (a Slack Channel condition is required; a Message Text condition is optional) |
+| Trigger Type        | Additional Fields                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| **Schedule**        | **Schedule** (**Recurring** or **Run once**), **Timezone** and **Concurrent runs** (recurring only), and **Retries** |
+| **Inbound Webhook** | No extra required fields                                                                                             |
+| **Sentry Alert**    | **Event Type** and **Sentry Client Secret**                                                                          |
+| **GitHub Event**    | **Event Type** and optional **Conditions**                                                                           |
+| **Slack Message**   | **Conditions** (a Slack Channel condition is required; a Message Text condition is optional)                         |
 
 For non-schedule automations, schedule fields are not used.
 
@@ -636,9 +636,19 @@ Automations display one of three statuses:
 
 ## Concurrent Runs
 
-For scheduled and manual triggers, only one run per automation can be active at a time. If one of
-those triggers fires while a previous run is still in progress, the new run is recorded as
-**Skipped** with reason "concurrent run active".
+For scheduled and manual triggers, an automation runs one firing at a time by default. A recurring
+schedule automation can raise **Concurrent runs** (`maxConcurrentRuns`, 1–10, default 1) to let up
+to that many firings be in progress at once — for example, a queue-draining automation whose runs
+outlast its cron interval. The limit counts firings, not sessions: a firing that fans out over
+several repositories holds one slot. A run waiting to retry still holds its slot.
+
+When a scheduled firing comes due at the limit, it is recorded as **Skipped** with reason
+`concurrent_run_active` and the schedule advances; **Trigger Now** at the limit is rejected with
+`409` and records nothing. The tick starts at most one firing per automation, so concurrency builds
+up one cron interval at a time rather than as a burst. Lowering the limit never stops runs already
+in progress; it only refuses new firings until enough of them finish. Event-driven and one-shot
+automations stay at 1; `maxConcurrentRuns` above 1 is rejected for anything but a recurring
+schedule.
 
 Event-driven automations use concurrency keys instead. For inbound webhooks, retries with the same
 `idempotencyKey` are treated as the same event, but separate deliveries without a shared
@@ -683,7 +693,7 @@ auto-pause threshold.
 | Repositories per automation            | 10 (multi-select on schedule triggers) |
 | Minimum schedule interval              | 15 minutes                             |
 | Webhook payload size                   | 64 KB                                  |
-| Concurrent runs per automation         | 1 for scheduled/manual triggers only   |
+| Concurrent runs per automation         | 1 by default, up to 10 (schedule only) |
 | Consecutive failures before auto-pause | 3                                      |
 | Launch retries per scheduled run       | 5                                      |
 | Run execution timeout                  | 90 minutes                             |

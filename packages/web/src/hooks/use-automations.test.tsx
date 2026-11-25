@@ -33,6 +33,7 @@ function automation(id: string, name: string): AutomationListItem {
     consecutiveFailures: 0,
     maxRetries: 0,
     sandboxTimeoutMs: null,
+    maxConcurrentRuns: 1,
     createdBy: "user-1",
     userId: "11111111111111111111111111111111",
     createdAt: 1,

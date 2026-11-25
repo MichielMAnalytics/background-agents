@@ -603,6 +603,54 @@ describe("automation read, update, and delete routes", () => {
       expect(mockStore.bindAutomationUpdate).not.toHaveBeenCalled();
     });
 
+    it("updates the concurrent run limit of a scheduled automation", async () => {
+      mockStore.getById.mockResolvedValue(sampleRow);
+
+      const res = await callRoute("PUT", "/automations/auto-1", {
+        body: { maxConcurrentRuns: 4 },
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockStore.bindAutomationUpdate).toHaveBeenCalledWith(
+        "auto-1",
+        expect.objectContaining({ max_concurrent_runs: 4 })
+      );
+    });
+
+    it("rejects a concurrent run limit above one on a one-shot", async () => {
+      mockStore.getById.mockResolvedValue({
+        ...sampleRow,
+        schedule_cron: null,
+        schedule_once_at: Date.now() + 3_600_000,
+      });
+
+      const res = await callRoute("PUT", "/automations/auto-1", {
+        body: { maxConcurrentRuns: 2 },
+      });
+
+      expect(res.status).toBe(400);
+      expect(mockStore.bindAutomationUpdate).not.toHaveBeenCalled();
+    });
+
+    it("rejects a concurrent run limit above one on a non-schedule automation", async () => {
+      mockStore.getById.mockResolvedValue({
+        ...sampleRow,
+        trigger_type: "webhook",
+        schedule_cron: null,
+        trigger_config: JSON.stringify({ conditions: [] }),
+      });
+
+      const res = await callRoute("PUT", "/automations/auto-1", {
+        body: { maxConcurrentRuns: 2 },
+      });
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: "maxConcurrentRuns above 1 is only valid for recurring schedule triggers",
+      });
+      expect(mockStore.bindAutomationUpdate).not.toHaveBeenCalled();
+    });
+
     it("rejects a replacement pin the automation's harness cannot use", async () => {
       mockProviderAccountStore.getById.mockResolvedValue({
         id: "0123456789abcdef0123456789abcdef",

@@ -790,6 +790,70 @@ describe("automation create route", () => {
       expect(mockBatch).not.toHaveBeenCalled();
     });
 
+    it("stores the concurrent run limit of a scheduled automation, serialized by default", async () => {
+      mockStore.getById.mockResolvedValue(sampleRow);
+
+      const bounded = await callRoute("POST", "/automations", {
+        body: { ...validBody, maxConcurrentRuns: 10 },
+      });
+      expect(bounded.status).toBe(201);
+      expect(mockStore.bindAutomationInsert).toHaveBeenLastCalledWith(
+        expect.objectContaining({ max_concurrent_runs: 10 })
+      );
+
+      const serialized = await callRoute("POST", "/automations", { body: validBody });
+      expect(serialized.status).toBe(201);
+      expect(mockStore.bindAutomationInsert).toHaveBeenLastCalledWith(
+        expect.objectContaining({ max_concurrent_runs: 1 })
+      );
+    });
+
+    it("refuses a concurrent run limit above one on a non-schedule trigger but accepts one", async () => {
+      mockStore.getById.mockResolvedValue(sampleRow);
+      const webhookBody = {
+        name: "Inbound",
+        instructions: "Handle the payload.",
+        triggerType: "webhook",
+      };
+
+      const refused = await callRoute("POST", "/automations", {
+        body: { ...webhookBody, maxConcurrentRuns: 2 },
+      });
+      expect(refused.status).toBe(400);
+      expect(await refused.json()).toEqual({
+        error: "maxConcurrentRuns above 1 is only valid for recurring schedule triggers",
+      });
+      expect(mockBatch).not.toHaveBeenCalled();
+
+      const accepted = await callRoute("POST", "/automations", {
+        body: { ...webhookBody, maxConcurrentRuns: 1 },
+      });
+      expect(accepted.status).toBe(201);
+    });
+
+    it("refuses a concurrent run limit above one on a one-shot schedule", async () => {
+      const { scheduleCron: _cron, ...body } = validBody;
+      const res = await callRoute("POST", "/automations", {
+        body: { ...body, scheduleOnceAt: Date.now() + 3_600_000, maxConcurrentRuns: 2 },
+      });
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        error: "maxConcurrentRuns above 1 is only valid for recurring schedule triggers",
+      });
+      expect(mockBatch).not.toHaveBeenCalled();
+    });
+
+    it("rejects a concurrent run limit outside 1 to 10", async () => {
+      for (const maxConcurrentRuns of [0, 11]) {
+        const res = await callRoute("POST", "/automations", {
+          body: { ...validBody, maxConcurrentRuns },
+        });
+        expect(res.status).toBe(400);
+      }
+      expect(mockBatch).not.toHaveBeenCalled();
+    });
+
     it("accepts a zero launch retry limit on a non-schedule trigger", async () => {
       mockStore.getById.mockResolvedValue(sampleRow);
 

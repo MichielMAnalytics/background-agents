@@ -108,7 +108,9 @@ describe("RunHistory", () => {
     render(<RunHistory invocations={[invocation]} total={1} loading={false} hasMore={false} />);
 
     expect(screen.getByText("Skipped")).toBeInTheDocument();
-    expect(screen.getByText("Skipped because a previous run is still active")).toBeInTheDocument();
+    expect(
+      screen.getByText("Skipped because the concurrent run limit was reached")
+    ).toBeInTheDocument();
     expect(screen.queryByText(/repositories/)).not.toBeInTheDocument();
     expect(screen.queryByText(/completed/)).not.toBeInTheDocument();
   });
