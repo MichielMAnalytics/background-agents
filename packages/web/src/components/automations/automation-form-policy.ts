@@ -39,6 +39,8 @@ export interface AutomationFormValues {
   scheduleTz?: string;
   /** Launch retries; submitted for schedule triggers only. */
   maxRetries?: number;
+  /** Sandbox timeout override for every trigger type; null inherits. */
+  sandboxTimeoutMs?: number | null;
   instructions: string;
   triggerType: AutomationTriggerType;
   eventType?: string;
@@ -65,6 +67,8 @@ export interface AutomationAgentDraft {
   harness: HarnessId;
   model: string;
   reasoningEffort: string;
+  /** Time budget override for each run; null inherits the repository's sandbox timeout. */
+  sandboxTimeoutMs: number | null;
 }
 
 export interface AutomationFormDraft {
@@ -139,6 +143,7 @@ export function createAutomationFormDraft(
       harness,
       model: initialValues.model ?? DEFAULT_MODEL,
       reasoningEffort: initialValues.reasoningEffort ?? "",
+      sandboxTimeoutMs: initialValues.sandboxTimeoutMs ?? null,
     },
   };
 }
@@ -157,6 +162,7 @@ export function automationToFormValues(automation: Automation): InitialAutomatio
     scheduleTz: automation.scheduleTz,
     scheduleOnceAt: automation.scheduleOnceAt ?? undefined,
     maxRetries: automation.maxRetries,
+    sandboxTimeoutMs: automation.sandboxTimeoutMs,
     instructions: automation.instructions,
     triggerType: automation.triggerType,
     eventType: automation.eventType ?? undefined,
@@ -441,6 +447,7 @@ function buildSubmissionValues({
     reasoningEffort:
       effectiveReasoningEffort(draft.agent.harness, resolvedModel, draft.agent.reasoningEffort) ||
       null,
+    sandboxTimeoutMs: draft.agent.sandboxTimeoutMs,
     instructions: draft.instructions.trim(),
     triggerType: draft.trigger.type,
     providerSelections: draft.providerSelections,

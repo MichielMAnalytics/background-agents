@@ -1,5 +1,8 @@
 import { getValidHarnessOrDefault } from "@open-inspect/shared/harnesses";
-import type { SandboxSettings } from "@open-inspect/shared/types/integrations";
+import {
+  DEFAULT_FINAL_SNAPSHOT_BUFFER_MS,
+  type SandboxSettings,
+} from "@open-inspect/shared/types/integrations";
 import type { AutomationRow, AutomationRunRow, AutomationStore } from "../db/automation-store";
 import type { TeamStore } from "../db/teams";
 import type { AutomationSessionTarget } from "../automation/session-target";
@@ -37,6 +40,29 @@ export interface AutomationSessionServiceDeps {
   executionDeadlineMs(settings: SandboxSettings): number;
 }
 
+/**
+ * The target's resolved sandbox settings with the automation's own timeout, when it sets one,
+ * in place of the inherited one. Both the run's sweep deadline and the session's watchdog read
+ * the result, so the override moves both clocks together.
+ *
+ * The override is bounded above the default final-snapshot buffer, but a repository may raise
+ * its buffer past it. That pairing would expire the sandbox before it could preserve itself, so
+ * the launch fails and says why rather than starting it or quietly dropping the override.
+ */
+export function applyAutomationSandboxTimeout(
+  sandboxSettings: SandboxSettings,
+  sandboxTimeoutMs: number | null
+): SandboxSettings {
+  if (sandboxTimeoutMs === null) return sandboxSettings;
+  const bufferMs = sandboxSettings.finalSnapshotBufferMs ?? DEFAULT_FINAL_SNAPSHOT_BUFFER_MS;
+  if (bufferMs >= sandboxTimeoutMs) {
+    throw new Error(
+      `Automation time budget (${sandboxTimeoutMs} ms) must exceed the target's final snapshot buffer (${bufferMs} ms)`
+    );
+  }
+  return { ...sandboxSettings, sandboxTimeoutMs };
+}
+
 /** Assemble and initialize a claimed automation session using its admitted authority and target. */
 export class AutomationSessionService {
   constructor(private readonly deps: AutomationSessionServiceDeps) {}
@@ -58,9 +84,11 @@ export class AutomationSessionService {
       (target.repoOwner && target.repoName
         ? [{ repoOwner: target.repoOwner, repoName: target.repoName, repoId: target.repoId }]
         : []);
-    const { codeServerEnabled, vncEnabled, sandboxSettings } = await this.deps.resolveSettings(
-      scopeMembers,
-      target.environmentId
+    const resolved = await this.deps.resolveSettings(scopeMembers, target.environmentId);
+    const { codeServerEnabled, vncEnabled } = resolved;
+    const sandboxSettings = applyAutomationSandboxTimeout(
+      resolved.sandboxSettings,
+      automation.sandbox_timeout_ms ?? null
     );
     // The session below is about to start spending this budget, so the sweep
     // must not come for the run until it is spent.

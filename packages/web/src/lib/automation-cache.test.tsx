@@ -62,6 +62,7 @@ const original: AutomationListItem = {
   nextRunAt: null,
   consecutiveFailures: 0,
   maxRetries: 0,
+  sandboxTimeoutMs: null,
   createdBy: "user-1",
   userId: null,
   ownerTeamId: "team-1",

@@ -389,6 +389,7 @@ async function handleCreateAutomation(
     next_run_at: nextRunAt,
     consecutive_failures: 0,
     max_retries: body.maxRetries ?? 0,
+    sandbox_timeout_ms: body.sandboxTimeoutMs ?? null,
     created_by: enforced.participantUserId,
     user_id: resolvedUserId,
     created_at: now,
@@ -653,6 +654,11 @@ async function handleUpdateAutomation(
   }
   if (body.scheduleTz !== undefined) updateFields.schedule_tz = body.scheduleTz;
   if (body.maxRetries !== undefined) updateFields.max_retries = body.maxRetries;
+  // Runs already launched keep the budget their session was created with; null
+  // clears the override back to inheriting.
+  if (body.sandboxTimeoutMs !== undefined) {
+    updateFields.sandbox_timeout_ms = body.sandboxTimeoutMs;
+  }
   if (body.harness !== undefined) updateFields.harness = nextHarness;
   if (body.model !== undefined) updateFields.model = nextModel;
   // A harness switch can invalidate the stored effort just like a model change.

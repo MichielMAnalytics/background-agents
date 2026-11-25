@@ -157,6 +157,30 @@ describe("AutomationStore (D1 integration)", () => {
       expect(await store.getEnvironmentsForAutomation("auto-env")).toEqual([]);
     });
 
+    it("round-trips the sandbox timeout override, including clearing it", async () => {
+      const store = new AutomationStore(env.DB);
+      await store.create(makeAutomation({ id: "auto-timeout" }));
+      expect((await store.getById("auto-timeout"))!.sandbox_timeout_ms).toBeNull();
+
+      await store.create(makeAutomation({ id: "auto-timeout-set", sandbox_timeout_ms: 1_800_000 }));
+      const created = await store.getById("auto-timeout-set");
+      expect(created!.sandbox_timeout_ms).toBe(1_800_000);
+      expect(toAutomation(created!, [], [], []).sandboxTimeoutMs).toBe(1_800_000);
+
+      const raised = await store.update("auto-timeout-set", { sandbox_timeout_ms: 14_400_000 });
+      expect(raised!.sandbox_timeout_ms).toBe(14_400_000);
+      const cleared = await store.update("auto-timeout-set", { sandbox_timeout_ms: null });
+      expect(cleared!.sandbox_timeout_ms).toBeNull();
+      expect(toAutomation(cleared!, [], [], []).sandboxTimeoutMs).toBeNull();
+    });
+
+    it("rejects a sandbox timeout override outside the column bounds", async () => {
+      const store = new AutomationStore(env.DB);
+      await expect(
+        store.create(makeAutomation({ id: "auto-timeout-bad", sandbox_timeout_ms: 60_000 }))
+      ).rejects.toThrow();
+    });
+
     it("returns null for nonexistent automation", async () => {
       const store = new AutomationStore(env.DB);
       const result = await store.getById("nonexistent");

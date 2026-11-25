@@ -197,7 +197,9 @@ Click **Resume** to re-enable the automation. Resuming resets the failure counte
 
 ## Execution timeout
 
-Each run's session has an execution budget: the sandbox timeout in effect for the run's repository or environment (see [Sandbox settings](/configure/sandbox-settings)), otherwise the operator's `EXECUTION_TIMEOUT_MS`, otherwise 2 hours. The session fails the prompt at the budget, and the run fails with it. If that completion never reaches the scheduler, a sweep fails the run with reason `execution_timeout` after an additional grace period of 100 minutes. A run that reports success after the sweep already declared it lost is corrected back to Completed, but the failure strike already counted stays until the next fully successful firing.
+Each run's session has an execution budget: the automation's own **Time budget**, when set; otherwise the sandbox timeout in effect for the run's repository or environment (see [Sandbox settings](/configure/sandbox-settings)); otherwise the operator's `EXECUTION_TIMEOUT_MS`; otherwise 2 hours. The session fails the prompt at the budget, and the run fails with it. If that completion never reaches the scheduler, a sweep fails the run with reason `execution_timeout` after an additional grace period of 100 minutes. A run that reports success after the sweep already declared it lost is corrected back to Completed, but the failure strike already counted stays until the next fully successful firing.
+
+To give one automation a different budget without changing its repository's settings, set **Time budget** in the automation's agent settings. It replaces the inherited sandbox timeout, longer or shorter, for that automation's runs only, from 15 minutes to 24 hours; **Repository default** inherits. Runs already in progress keep the budget they started with. The field is hidden on sandbox providers without a configurable timeout, and Vercel still caps the lifetime at 45 minutes. If a target repository's final snapshot buffer is at least as long as the automation's budget, the run fails to launch and says why.
 
 ## Limits
 
@@ -213,6 +215,7 @@ Each run's session has an execution budget: the sandbox timeout in effect for th
 | Consecutive failures before auto-pause       | 3                                                                                                             |
 | Launch retries per scheduled run             | Up to 5 (none by default)                                                                                     |
 | Run execution timeout                        | The session's execution budget (2 hours by default), plus a 100-minute sweep grace before `execution_timeout` |
+| Per-automation time budget                   | 15 minutes to 24 hours; unset inherits the repository or environment sandbox timeout                          |
 
 ## Next steps
 

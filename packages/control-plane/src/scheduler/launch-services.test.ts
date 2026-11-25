@@ -382,6 +382,40 @@ describe("AutomationSessionService", () => {
     expect(deps.selectMemory).not.toHaveBeenCalled();
     expect(deps.initializeSession).not.toHaveBeenCalled();
   });
+
+  it("replaces the inherited sandbox timeout with the automation's own in deadline and session", async () => {
+    const { deps, service, input, ctx } = sessionHarness();
+    input.automation = { ...automation, sandbox_timeout_ms: 1_800_000 };
+    await service.create(input);
+    expect(deps.store.setRunExecutionDeadline).toHaveBeenCalledWith(input.run.id, 1_805_500);
+    expect(deps.initializeSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sandboxSettings: { sandboxTimeoutMs: 1_800_000 } }),
+      ctx
+    );
+  });
+
+  it("keeps the inherited sandbox settings when the automation sets no timeout", async () => {
+    const { deps, service, input, ctx } = sessionHarness();
+    input.automation = { ...automation, sandbox_timeout_ms: null };
+    await service.create(input);
+    expect(deps.initializeSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sandboxSettings: { sandboxTimeoutMs: 20_000 } }),
+      ctx
+    );
+  });
+
+  it("fails the launch when the target's snapshot buffer outlasts the automation's timeout", async () => {
+    const { deps, service, input } = sessionHarness();
+    deps.resolveSettings.mockResolvedValue({
+      codeServerEnabled: false,
+      vncEnabled: false,
+      sandboxSettings: { finalSnapshotBufferMs: 1_800_000 },
+    });
+    input.automation = { ...automation, sandbox_timeout_ms: 1_800_000 };
+    await expect(service.create(input)).rejects.toThrow("must exceed the target's final snapshot");
+    expect(deps.store.setRunExecutionDeadline).not.toHaveBeenCalled();
+    expect(deps.initializeSession).not.toHaveBeenCalled();
+  });
 });
 
 function admissionHarness() {

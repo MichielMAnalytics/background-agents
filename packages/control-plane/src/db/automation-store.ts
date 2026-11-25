@@ -94,6 +94,11 @@ export interface AutomationRow {
    * Optional so rows built for insert may omit it; the column defaults to no retries.
    */
   max_retries?: number;
+  /**
+   * Sandbox timeout override for this automation's runs; null inherits. Optional so rows
+   * built for insert may omit it.
+   */
+  sandbox_timeout_ms?: number | null;
   created_by: string;
   user_id: string | null;
   owner_team_id: string | null;
@@ -386,6 +391,7 @@ export function toAutomation(
     nextRunAt: row.next_run_at,
     consecutiveFailures: row.consecutive_failures,
     maxRetries: row.max_retries ?? 0,
+    sandboxTimeoutMs: row.sandbox_timeout_ms ?? null,
     createdBy: row.created_by,
     userId: row.user_id,
     ownerTeamId: row.owner_team_id,
@@ -541,8 +547,9 @@ export class AutomationStore {
          (id, name, instructions,
           trigger_type, schedule_cron, schedule_tz, harness, model, reasoning_effort, enabled, next_run_at,
           consecutive_failures, created_by, user_id, created_at, updated_at, deleted_at,
-           event_type, trigger_config, trigger_auth_data, owner_team_id, schedule_once_at, max_retries)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           event_type, trigger_config, trigger_auth_data, owner_team_id, schedule_once_at, max_retries,
+           sandbox_timeout_ms)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         row.id,
@@ -567,7 +574,8 @@ export class AutomationStore {
         row.trigger_auth_data,
         row.owner_team_id,
         row.schedule_once_at,
-        row.max_retries ?? 0
+        row.max_retries ?? 0,
+        row.sandbox_timeout_ms ?? null
       );
   }
 
@@ -791,6 +799,7 @@ export class AutomationStore {
       "enabled",
       "consecutive_failures",
       "max_retries",
+      "sandbox_timeout_ms",
       "event_type",
       "trigger_config",
       "trigger_auth_data",

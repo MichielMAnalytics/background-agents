@@ -17,10 +17,45 @@ import {
 } from "@/components/ui/select";
 import { ChevronDownIcon, ModelIcon } from "@/components/ui/icons";
 import { formatModelNameLower } from "@/lib/format";
+import { getPublicSandboxProvider } from "@/lib/sandbox-provider";
+import { sandboxSettingCapabilities } from "@open-inspect/shared/types/integrations";
 import { FieldDescription } from "./automation-form-field";
 import { effectiveReasoningEffort, type AutomationAgentDraft } from "./automation-form-policy";
 
 const DEFAULT_REASONING_VALUE = "__default__";
+const INHERIT_TIME_BUDGET_VALUE = "__inherit__";
+
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+
+/** Presets within MIN/MAX_AUTOMATION_SANDBOX_TIMEOUT_MS. */
+const TIME_BUDGET_OPTIONS_MS = [
+  15 * MINUTE_MS,
+  30 * MINUTE_MS,
+  HOUR_MS,
+  2 * HOUR_MS,
+  4 * HOUR_MS,
+  8 * HOUR_MS,
+  12 * HOUR_MS,
+  24 * HOUR_MS,
+];
+
+/**
+ * Exact label for a time budget. An override set through the API need not be a preset, and a
+ * rounded label would make it indistinguishable from the preset it rounds to.
+ */
+export function formatTimeBudget(ms: number): string {
+  const unit = (count: number, name: string) => `${count} ${name}${count === 1 ? "" : "s"}`;
+  const hours = Math.floor(ms / HOUR_MS);
+  const minutes = Math.floor((ms % HOUR_MS) / MINUTE_MS);
+  const seconds = Math.floor((ms % MINUTE_MS) / 1000);
+  const parts = [
+    hours > 0 && unit(hours, "hour"),
+    minutes > 0 && unit(minutes, "minute"),
+    seconds > 0 && unit(seconds, "second"),
+  ].filter(Boolean);
+  return parts.join(" ");
+}
 
 interface AutomationAgentFieldsProps {
   value: AutomationAgentDraft;
@@ -44,6 +79,12 @@ export function AutomationAgentFields({
     resolvedModel,
     value.reasoningEffort
   );
+  const supportsTimeBudget = sandboxSettingCapabilities(getPublicSandboxProvider()).timeout;
+  // An override set through the API to a value outside the presets still shows as selected.
+  const timeBudgetOptions =
+    value.sandboxTimeoutMs === null || TIME_BUDGET_OPTIONS_MS.includes(value.sandboxTimeoutMs)
+      ? TIME_BUDGET_OPTIONS_MS
+      : [...TIME_BUDGET_OPTIONS_MS, value.sandboxTimeoutMs].sort((a, b) => a - b);
   const modelGroups: ComboboxGroup[] = enabledModelOptions.map((group) => ({
     category: group.category,
     options: group.models.map((model) => ({
@@ -169,6 +210,46 @@ export function AutomationAgentFields({
           allowed. &quot;Use model default&quot; leaves the choice to the model.
         </FieldDescription>
       </div>
+
+      {supportsTimeBudget && (
+        <div>
+          <label
+            htmlFor="automation-time-budget"
+            className="block text-sm font-medium text-foreground mb-1.5"
+          >
+            Time budget
+          </label>
+          <Select
+            value={
+              value.sandboxTimeoutMs === null
+                ? INHERIT_TIME_BUDGET_VALUE
+                : String(value.sandboxTimeoutMs)
+            }
+            onValueChange={(selected) =>
+              onChange({
+                ...value,
+                sandboxTimeoutMs: selected === INHERIT_TIME_BUDGET_VALUE ? null : Number(selected),
+              })
+            }
+          >
+            <SelectTrigger id="automation-time-budget" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={INHERIT_TIME_BUDGET_VALUE}>Repository default</SelectItem>
+              {timeBudgetOptions.map((ms) => (
+                <SelectItem key={ms} value={String(ms)}>
+                  {formatTimeBudget(ms)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FieldDescription>
+            How long each run may work before it is stopped. Replaces the sandbox timeout this
+            automation&apos;s runs would otherwise inherit from their repository or environment.
+          </FieldDescription>
+        </div>
+      )}
     </>
   );
 }

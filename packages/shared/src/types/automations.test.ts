@@ -5,8 +5,11 @@ import {
   createAutomationRequestSchema,
   listAutomationsResponseSchema,
   MAX_AUTOMATION_RETRIES,
+  MAX_AUTOMATION_SANDBOX_TIMEOUT_MS,
+  MIN_AUTOMATION_SANDBOX_TIMEOUT_MS,
   updateAutomationRequestSchema,
 } from "./automations";
+import { DEFAULT_FINAL_SNAPSHOT_BUFFER_MS } from "./integrations";
 
 const ACCOUNT_ID = "0123456789abcdef0123456789abcdef";
 const USER_ID = "11111111111111111111111111111111";
@@ -176,6 +179,47 @@ describe("listAutomationsResponseSchema", () => {
         nextCursor: null,
       }).success
     ).toBe(false);
+  });
+});
+
+describe("automation sandbox timeout override", () => {
+  const create = (sandboxTimeoutMs: unknown) =>
+    createAutomationRequestSchema.safeParse({
+      name: "Long job",
+      instructions: "Run it",
+      sandboxTimeoutMs,
+    });
+
+  it("admits the bounds, null, and omission on create and update", () => {
+    expect(create(MIN_AUTOMATION_SANDBOX_TIMEOUT_MS).success).toBe(true);
+    expect(create(MAX_AUTOMATION_SANDBOX_TIMEOUT_MS).success).toBe(true);
+    expect(create(null).success).toBe(true);
+    expect(create(undefined).success).toBe(true);
+    expect(updateAutomationRequestSchema.safeParse({ sandboxTimeoutMs: null }).success).toBe(true);
+    expect(updateAutomationRequestSchema.safeParse({ sandboxTimeoutMs: 3_600_000 }).success).toBe(
+      true
+    );
+  });
+
+  it("refuses values outside the bounds or off the whole-second grid", () => {
+    expect(create(MIN_AUTOMATION_SANDBOX_TIMEOUT_MS - 1000).success).toBe(false);
+    expect(create(MAX_AUTOMATION_SANDBOX_TIMEOUT_MS + 1000).success).toBe(false);
+    expect(create(MIN_AUTOMATION_SANDBOX_TIMEOUT_MS + 1).success).toBe(false);
+    expect(create("3600000").success).toBe(false);
+  });
+
+  it("stays above the default final-snapshot buffer", () => {
+    expect(MIN_AUTOMATION_SANDBOX_TIMEOUT_MS).toBeGreaterThan(DEFAULT_FINAL_SNAPSHOT_BUFFER_MS);
+  });
+
+  it("reads a response without the field as inheriting", () => {
+    const { sandboxTimeoutMs: _omitted, ...rest } = { ...automation, sandboxTimeoutMs: null };
+    const parsed = listAutomationsResponseSchema.parse({
+      automations: [rest],
+      hasMore: false,
+      nextCursor: null,
+    });
+    expect(parsed.automations[0].sandboxTimeoutMs).toBeNull();
   });
 });
 
