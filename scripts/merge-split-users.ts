@@ -141,7 +141,7 @@ export class WranglerD1Database implements SqlDatabase {
   }
 
   prepare(query: string): SqlStatement {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    // oxlint-disable-next-line typescript/no-this-alias
     const db = this;
     let params: unknown[] = [];
     const statement: WranglerStatement = {

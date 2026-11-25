@@ -90,7 +90,7 @@ export function SessionPromptComposer({
     if (!input) return;
 
     const resizeInput = () => {
-      // eslint-disable-next-line react-hooks/immutability -- auto-sizing writes to the textarea DOM node inside a layout effect.
+      // oxlint-disable-next-line react/immutability -- auto-sizing writes to the textarea DOM node inside a layout effect.
       input.style.height = "auto";
       input.style.height = `${input.scrollHeight}px`;
     };

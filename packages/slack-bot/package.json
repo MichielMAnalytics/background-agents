@@ -9,8 +9,8 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix"
+    "lint": "oxlint -c ../../oxlint.config.ts src/",
+    "lint:fix": "oxlint -c ../../oxlint.config.ts src/ --fix"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",

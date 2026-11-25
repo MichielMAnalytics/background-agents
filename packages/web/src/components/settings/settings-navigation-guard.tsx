@@ -46,7 +46,7 @@ export function useConfirmSettingsNavigation() {
 export function useSettingsUnsavedChanges(dirty: boolean) {
   const guard = useContext(SettingsNavigationGuardContext);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/immutability -- the context value is a ref the guard owns; writing it in an effect is the intended protocol.
+    // oxlint-disable-next-line react/immutability -- the context value is a ref the guard owns; writing it in an effect is the intended protocol.
     if (guard) guard.current = dirty;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();

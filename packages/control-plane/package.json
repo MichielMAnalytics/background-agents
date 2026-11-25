@@ -13,8 +13,8 @@
     "test:coverage": "vitest run --config vitest.coverage.config.ts --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p test/integration",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix"
+    "lint": "oxlint -c ../../oxlint.config.ts src/",
+    "lint:fix": "oxlint -c ../../oxlint.config.ts src/ --fix"
   },
   "dependencies": {
     "@aws-sdk/client-ec2": "^3.1170.0",

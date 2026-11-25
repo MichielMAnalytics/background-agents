@@ -39,6 +39,7 @@ function TrendTooltip({
   if (!active || !row) return null;
   const date = String(row.date);
   // The newest bucket covers only part of today.
+  // oxlint-disable-next-line react/purity -- the tooltip renders on hover, so reading the clock here cannot cause unstable re-renders.
   const partial = date === new Date().toISOString().slice(0, 10);
   return (
     <div className="min-w-40 rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">

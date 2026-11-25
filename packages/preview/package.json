@@ -9,7 +9,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit && tsc --noEmit -p e2e",
-    "lint": "eslint src/ e2e/"
+    "lint": "oxlint -c ../../oxlint.config.ts src/ e2e/"
   },
   "dependencies": {
     "@open-inspect/control-plane": "file:../control-plane",

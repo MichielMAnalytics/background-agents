@@ -135,7 +135,7 @@ function SettingsPageContent() {
   const ActivePanel = getSettingsPanel(renderedCategory);
   const content = (
     <Suspense fallback={null}>
-      {/* eslint-disable-next-line react-hooks/static-components -- getSettingsPanel returns module-level components, so the type is stable across renders. */}
+      {/* oxlint-disable-next-line react/static-components -- getSettingsPanel returns module-level components, so the type is stable across renders. */}
       <ActivePanel />
     </Suspense>
   );

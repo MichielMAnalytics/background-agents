@@ -1,37 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ESLint } from "eslint";
-
 import { parseComplexityMessage } from "./lint-complexity-message.mjs";
+import { lintText, loadRepositoryConfig } from "./oxlint/lint-text.mjs";
 
-test("parses the supported ESLint complexity diagnostic shape", async () => {
-  const eslint = new ESLint({
-    overrideConfigFile: true,
-    ruleFilter: ({ ruleId }) => ruleId === "complexity",
-    overrideConfig: {
-      rules: {
-        complexity: ["warn", { max: 0, variant: "classic" }],
-      },
-    },
+test("parses the supported oxlint complexity diagnostic shape", async () => {
+  const config = await loadRepositoryConfig({
+    rules: { complexity: ["warn", { max: 0, variant: "classic" }] },
   });
-  const [result] = await eslint.lintText(
-    "function example(value) { if (value) return 1; return 0; }"
+  const { messages } = await lintText(
+    "function example(value) { if (value) return 1; return 0; }",
+    "example.js",
+    { config }
   );
-  const [message] = result.messages;
+  const [message] = messages;
 
+  assert.equal(messages.length, 1);
   assert.deepEqual(
-    {
-      ruleId: message.ruleId,
-      messageId: message.messageId,
-      message: message.message,
-      nodeType: message.nodeType,
-    },
+    { ruleId: message.ruleId, message: message.message },
     {
       ruleId: "complexity",
-      messageId: "complex",
-      message: "Function 'example' has a complexity of 2. Maximum allowed is 0.",
-      nodeType: "FunctionDeclaration",
+      message: "function `example` has a complexity of 2. Maximum allowed is 0.",
     }
   );
 
@@ -40,7 +29,7 @@ test("parses the supported ESLint complexity diagnostic shape", async () => {
     line: 1,
     column: 1,
     complexity: 2,
-    description: "FunctionDeclaration",
+    description: "function `example`",
   });
 });
 
@@ -49,9 +38,7 @@ test("rejects an unsupported complexity diagnostic shape", () => {
     () =>
       parseComplexityMessage("packages/example.ts", {
         ruleId: "complexity",
-        messageId: "unexpected",
-        message: "Function 'example' has a complexity of 12. Maximum allowed is 0.",
-        nodeType: "FunctionDeclaration",
+        message: "Function 'example' is too complex (12).",
         line: 4,
         column: 1,
       }),

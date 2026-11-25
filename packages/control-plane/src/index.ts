@@ -38,7 +38,7 @@ export default {
     const upgradeHeader = request.headers.get("Upgrade");
     if (upgradeHeader?.toLowerCase() === "websocket") {
       const metrics = createRequestMetrics();
-      // eslint-disable-next-line no-restricted-syntax -- composition root: construct the request-scoped database adapter
+      // oxlint-disable-next-line local/no-restricted-syntax -- composition root: construct the request-scoped database adapter
       const db = instrumentSqlDatabase(bindings.DB, metrics);
       return handleWebSocket(request, env, url, db, metrics);
     }
@@ -67,7 +67,7 @@ export default {
     await job.run(
       {
         env,
-        // eslint-disable-next-line no-restricted-syntax -- scheduled composition root: the one cron env.DB read
+        // oxlint-disable-next-line local/no-restricted-syntax -- scheduled composition root: the one cron env.DB read
         db: env.DB,
         sessions: createSessionRuntimeClient(env, correlation),
         backgroundTasks: createCloudflareBackgroundTasks(ctx),
@@ -86,7 +86,7 @@ export default {
     const env = createCloudflareEnv(bindings);
     await consumeJobBatch(batch, {
       env,
-      // eslint-disable-next-line no-restricted-syntax -- queue composition root: the one consumer env.DB read
+      // oxlint-disable-next-line local/no-restricted-syntax -- queue composition root: the one consumer env.DB read
       db: env.DB,
       log: logger,
     });

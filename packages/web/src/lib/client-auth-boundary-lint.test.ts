@@ -1,9 +1,6 @@
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { ESLint } from "eslint";
 import { describe, expect, it } from "vitest";
+import { lintText } from "../../../../scripts/oxlint/lint-text.mjs";
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const componentPath = "packages/web/src/components/example.tsx";
 const hookPath = "packages/web/src/hooks/example.ts";
 const clientLibraryPath = "packages/web/src/lib/example-client.ts";
@@ -11,10 +8,8 @@ const authSessionPath = "packages/web/src/lib/auth-session.tsx";
 const browserApiFetchPath = "packages/web/src/lib/browser-api-fetch.ts";
 const controlPlaneTransportPath = "packages/web/src/lib/control-plane-transport.ts";
 
-const eslint = new ESLint({ cwd: repositoryRoot });
-
 async function boundaryMessages(source: string, filePath: string) {
-  const [result] = await eslint.lintText(source, { filePath });
+  const result = await lintText(source, filePath);
   return result.messages.filter(
     (message) =>
       message.ruleId === "no-restricted-imports" || message.ruleId === "no-restricted-globals"

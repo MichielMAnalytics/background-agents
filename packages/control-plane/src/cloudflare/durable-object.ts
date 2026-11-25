@@ -31,7 +31,7 @@ export class SessionDO extends DurableObject<WorkerBindings> {
 
   constructor(ctx: DurableObjectState, env: WorkerBindings) {
     super(ctx, env);
-    // eslint-disable-next-line no-restricted-syntax -- composition root input: the DO's one env.DB read
+    // oxlint-disable-next-line local/no-restricted-syntax -- composition root input: the DO's one env.DB read
     const db = env.DB;
     if (!db) {
       throw new Error(

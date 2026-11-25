@@ -124,7 +124,7 @@ export function createControlPlaneApp(
     const pathname = c.req.path;
     const method = c.req.raw.method;
 
-    // eslint-disable-next-line no-restricted-syntax -- composition root validates the required binding
+    // oxlint-disable-next-line local/no-restricted-syntax -- composition root validates the required binding
     if (!c.env.DB) {
       logger.error("DB binding is not configured; refusing request", { http_path: pathname });
       return new Response(JSON.stringify({ error: "Database not configured" }), {
@@ -239,7 +239,7 @@ export function createControlPlaneApp(
 }
 
 function contextFor(request: Request, env: Env, executionCtx: RequestContext["executionCtx"]) {
-  // eslint-disable-next-line no-restricted-syntax -- ordinary HTTP composition root passes the stable binding once
+  // oxlint-disable-next-line local/no-restricted-syntax -- ordinary HTTP composition root passes the stable binding once
   const database = env.DB;
   return createRequestContext({ request, env, database, executionCtx });
 }

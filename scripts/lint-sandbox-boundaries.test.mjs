@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ESLint } from "eslint";
-
-const eslint = new ESLint();
+import { lintText } from "./oxlint/lint-text.mjs";
 
 test("new consumers and platform adapters cannot import sandbox implementations", async () => {
   for (const filePath of [
@@ -24,9 +22,9 @@ test("new consumers and platform adapters cannot import sandbox implementations"
       ["WatchdogEffectsDependencies", "../sandbox/lifecycle/watchdog-effects"],
     ]) {
       for (const specifier of [source, `${source}.ts`]) {
-        const [result] = await eslint.lintText(
+        const result = await lintText(
           `import type { ${name} } from "${specifier}"; export type Dependency = ${name};`,
-          { filePath }
+          filePath
         );
         assert.ok(
           result.messages.some((message) => message.ruleId === "no-restricted-imports"),
@@ -42,40 +40,40 @@ test("focused ports remain usable by consumers and extracted lifecycle modules",
     "packages/control-plane/src/session/new-consumer.ts",
     "packages/control-plane/src/sandbox/lifecycle/readiness.ts",
   ]) {
-    const [result] = await eslint.lintText(
+    const result = await lintText(
       'import type { SandboxReadiness } from "../sandbox/lifecycle/ports"; export type Dependency = SandboxReadiness;',
-      { filePath }
+      filePath
     );
     assert.equal(result.errorCount, 0, JSON.stringify(result.messages));
   }
-  const [access] = await eslint.lintText(
+  const access = await lintText(
     'import type { SandboxAccess } from "./sandbox-access"; export type Dependency = SandboxAccess;',
-    { filePath: "packages/control-plane/src/sandbox/lifecycle/reconciliation.ts" }
+    "packages/control-plane/src/sandbox/lifecycle/reconciliation.ts"
   );
   assert.equal(access.errorCount, 0, JSON.stringify(access.messages));
-  const [reconciliation] = await eslint.lintText(
+  const reconciliation = await lintText(
     'import type { VmStartupReconciliation } from "./vm-startup-reconciliation"; export type Dependency = VmStartupReconciliation;',
-    { filePath: "packages/control-plane/src/sandbox/lifecycle/manager.ts" }
+    "packages/control-plane/src/sandbox/lifecycle/manager.ts"
   );
   assert.equal(reconciliation.errorCount, 0, JSON.stringify(reconciliation.messages));
-  const [cleanup] = await eslint.lintText(
+  const cleanup = await lintText(
     'import { attemptRejectedStartupCleanup } from "./allocation-cleanup"; export const cleanup = attemptRejectedStartupCleanup;',
-    { filePath: "packages/control-plane/src/sandbox/lifecycle/manager.ts" }
+    "packages/control-plane/src/sandbox/lifecycle/manager.ts"
   );
   assert.equal(cleanup.errorCount, 0, JSON.stringify(cleanup.messages));
-  const [watchdog] = await eslint.lintText(
+  const watchdog = await lintText(
     'import { terminateStaleHeartbeat } from "./watchdog-effects"; export const effect = terminateStaleHeartbeat;',
-    { filePath: "packages/control-plane/src/sandbox/lifecycle/manager.ts" }
+    "packages/control-plane/src/sandbox/lifecycle/manager.ts"
   );
   assert.equal(watchdog.errorCount, 0, JSON.stringify(watchdog.messages));
-  const [launch] = await eslint.lintText(
+  const launch = await lintText(
     'import { SandboxLaunchContext } from "./launch-context"; export const launch = SandboxLaunchContext;',
-    { filePath: "packages/control-plane/src/sandbox/lifecycle/manager.ts" }
+    "packages/control-plane/src/sandbox/lifecycle/manager.ts"
   );
   assert.equal(launch.errorCount, 0, JSON.stringify(launch.messages));
-  const [errors] = await eslint.lintText(
+  const errors = await lintText(
     'import { SpawnSupersededError } from "./startup-errors"; export const superseded = SpawnSupersededError;',
-    { filePath: "packages/control-plane/src/sandbox/lifecycle/vm-startup-reconciliation.ts" }
+    "packages/control-plane/src/sandbox/lifecycle/vm-startup-reconciliation.ts"
   );
   assert.equal(errors.errorCount, 0, JSON.stringify(errors.messages));
 });

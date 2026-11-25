@@ -59,7 +59,7 @@ npm run build                                    # all packages
 npm run build -w @open-inspect/shared            # shared only (build first!)
 
 # Lint & format
-npm run lint:fix                                 # ESLint + Prettier fix
+npm run lint:fix                                 # oxlint + Prettier fix
 npm run format                                   # Prettier only
 npm run typecheck                                # tsc across all TS packages
 

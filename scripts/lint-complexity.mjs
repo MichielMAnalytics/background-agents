@@ -1,11 +1,13 @@
+import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { ESLint } from "eslint";
-
 import { parseComplexityMessage } from "./lint-complexity-message.mjs";
+import { loadRepositoryConfig, runOxlint, toMessage } from "./oxlint/lint-text.mjs";
 
-const TARGET_GLOB = "packages/**/*.{ts,tsx}";
+const TARGET_DIRECTORY = "packages";
+const TARGET_FILE_PATTERN = /\.(?:ts|tsx)$/u;
+const TARGET_GLOB = `${TARGET_DIRECTORY}/**/*.{ts,tsx}`;
 const HOTSPOT_THRESHOLD = 20;
 const RESULT_LIMIT = 25;
 const DISTRIBUTION_THRESHOLDS = [10, 15, 20, 30, 50];
@@ -47,7 +49,7 @@ function collectFindings(results) {
     for (const message of result.messages) {
       if (message.fatal) {
         throw new Error(
-          `ESLint could not analyze ${file}:${message.line ?? 0}:${message.column ?? 0}: ${message.message}`
+          `oxlint could not analyze ${file}:${message.line ?? 0}:${message.column ?? 0}: ${message.message}`
         );
       }
       if (message.ruleId === "complexity") {
@@ -80,7 +82,7 @@ function buildReport(results) {
   return {
     analysis: {
       metric: "cyclomatic-complexity",
-      eslintRule: "complexity",
+      rule: "complexity",
       variant: "classic",
       targetGlob: TARGET_GLOB,
       hotspotThreshold: HOTSPOT_THRESHOLD,
@@ -135,7 +137,7 @@ function formatText(report) {
       ? `${shown} found`
       : `top ${shown} of ${productionHotspots.length}`;
 
-  return `Cyclomatic complexity analysis (ESLint classic variant)
+  return `Cyclomatic complexity analysis (oxlint classic variant)
 
 Files: ${summary.files.total} total (${summary.files.production} production, ${summary.files.test} test)
 Functions: ${summary.functions.total} total (${summary.functions.production} production, ${summary.functions.test} test)
@@ -151,24 +153,44 @@ Complexity findings are report-only and do not affect the exit code.
 `;
 }
 
+// A max of zero makes the rule report every function with its complexity.
+const COMPLEXITY_RULES = { complexity: ["warn", { max: 0, variant: "classic" }] };
+
+// Runs only the complexity rule over the target files, using the repository's ignore patterns.
+// Oxlint resolves `ignorePatterns` relative to its config file, so the config is written to the
+// working directory (the repository root) for the duration of the run.
+async function analyzeComplexity() {
+  const configPath = path.join(process.cwd(), `.oxlintrc.complexity-${process.pid}.json`);
+  await writeFile(
+    configPath,
+    JSON.stringify(await loadRepositoryConfig({ rules: COMPLEXITY_RULES }))
+  );
+  try {
+    const oxlintArgs = ["-c", configPath, "--disable-nested-config", TARGET_DIRECTORY];
+    const files = (await runOxlint([...oxlintArgs, "--debug=files"], process.cwd()))
+      .split("\n")
+      .filter((file) => TARGET_FILE_PATTERN.test(file));
+    const { diagnostics } = JSON.parse(
+      await runOxlint([...oxlintArgs, "--format", "json"], process.cwd())
+    );
+
+    const messagesByFile = new Map(files.map((file) => [file, []]));
+    for (const diagnostic of diagnostics) {
+      messagesByFile.get(diagnostic.filename)?.push(toMessage(diagnostic));
+    }
+    return files.map((filePath) => ({ filePath, messages: messagesByFile.get(filePath) }));
+  } finally {
+    await rm(configPath, { force: true });
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args.some((argument) => argument !== "--json")) {
     throw new Error("Only the optional --json flag is supported");
   }
 
-  const eslint = new ESLint({
-    ruleFilter: ({ ruleId }) => ruleId === "complexity",
-    overrideConfig: [
-      {
-        files: [TARGET_GLOB],
-        rules: {
-          complexity: ["warn", { max: 0, variant: "classic" }],
-        },
-      },
-    ],
-  });
-  const report = buildReport(await eslint.lintFiles([TARGET_GLOB]));
+  const report = buildReport(await analyzeComplexity());
   const output = args.includes("--json") ? JSON.stringify(report, null, 2) : formatText(report);
   process.stdout.write(`${output}\n`);
 }

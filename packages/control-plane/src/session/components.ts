@@ -39,7 +39,7 @@ import { createLogger, parseLogLevel } from "../logger";
 import type { Logger } from "../logger";
 // The composition root binds lifecycle ports to their implementation.
 import {
-  // eslint-disable-next-line no-restricted-imports
+  // oxlint-disable-next-line no-restricted-imports
   SandboxLifecycleManager,
   DEFAULT_LIFECYCLE_CONFIG,
   type SandboxStorage,
@@ -50,10 +50,10 @@ import {
 } from "../sandbox/lifecycle/manager";
 import type { ImageBuildLookup } from "../sandbox/lifecycle/image-selection";
 // The composition root supplies launch integration ports, not consumer-facing launch mechanics.
-// eslint-disable-next-line no-restricted-imports
+// oxlint-disable-next-line no-restricted-imports
 import type { McpServerLookup, SlackAgentNotifyLookup } from "../sandbox/lifecycle/launch-context";
 // The composition root shares the internal access collaborator with shutdown and lifecycle only.
-// eslint-disable-next-line no-restricted-imports
+// oxlint-disable-next-line no-restricted-imports
 import { SandboxAccess } from "../sandbox/lifecycle/sandbox-access";
 import { resolveLifecycleTimeouts } from "../sandbox/lifecycle/timeout-settings";
 import { McpServerStore } from "../db/mcp-servers";
@@ -76,7 +76,7 @@ import type { BackgroundTasks } from "../platform-ports";
 import type { SessionPlatform } from "./platform";
 import { SessionCoreRepository } from "./session-core-repository";
 // The composition root grants each consumer only its declared sandbox port.
-// eslint-disable-next-line no-restricted-imports
+// oxlint-disable-next-line no-restricted-imports
 import { SandboxRepository } from "./sandbox-repository";
 import { SandboxBootstrapRepository } from "./sandbox-bootstrap-repository";
 import { SessionAttachmentRepository } from "./session-attachment-repository";
