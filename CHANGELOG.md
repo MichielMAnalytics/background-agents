@@ -2,6 +2,14 @@
 
 New features, integrations, and notable improvements to Open-Inspect — newest first.
 
+## November 25, 2026
+
+**boxd sandbox provider.** Set `SANDBOX_PROVIDER=boxd` to run each session in its own isolated
+[boxd](https://boxd.sh?ref=background-agents) machine, on Cloudflare or the Node host. Idle sessions
+hibernate and the next prompt wakes the same machine with its files and processes intact.
+`npm run sandbox:images -- build --provider boxd` builds the base snapshot. See
+[boxd Sandbox Provider](docs/BOXD_SANDBOX_PROVIDER.md).
+
 ## November 24, 2026
 
 **Slack routing rules can start sessions with no repository.** A keyword rule under **Settings ›

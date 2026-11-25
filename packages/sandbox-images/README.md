@@ -1,8 +1,8 @@
 # Sandbox images
 
-One build-only package owns platform dependencies for Modal, Daytona, E2B, Vercel, Boat, and EC2.
-Provider adapters own native creation, uploads, snapshots, restores, provider overlays, and cleanup.
-The control plane does not consume build hashes or dependency inventories.
+One build-only package owns platform dependencies for Modal, Daytona, E2B, Vercel, Boat, EC2, and
+boxd. Provider adapters own native creation, uploads, snapshots, restores, provider overlays, and
+cleanup. The control plane does not consume build hashes or dependency inventories.
 
 ## Update dependencies
 
@@ -43,6 +43,7 @@ credentials and create billable temporary sandboxes; they do not deploy the cont
 | Vercel   | VERCEL_TOKEN, VERCEL_PROJECT_ID; optional team/API URL                                        |
 | Boat     | BOAT_API_KEY, BOAT_BASE_SNAPSHOT name prefix; optional API URL/org/size                       |
 | EC2      | AWS credentials, EC2_SANDBOX_SUBNET_ID, EC2_SANDBOX_SECURITY_GROUP_ID, EC2_IMAGE_BUILD_BUCKET |
+| boxd     | BOXD_API_KEY; optional BOXD_ORG, BOXD_REGION, BOXD_SNAPSHOT_PREFIX                            |
 
 ```bash
 npm run sandbox:images -- build --provider e2b --output /tmp/e2b-image.json

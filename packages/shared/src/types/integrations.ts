@@ -325,6 +325,7 @@ export const SANDBOX_PROVIDER_NAMES = [
   "e2b",
   "boat",
   "ec2",
+  "boxd",
 ] as const;
 
 export type SandboxProviderName = (typeof SANDBOX_PROVIDER_NAMES)[number];
@@ -344,6 +345,8 @@ const SANDBOX_SETTING_CAPABILITIES = {
   boat: { resources: true, resourceLimits: false, timeout: true },
   // One instance type per deployment; the lifetime is enforced on the instance.
   ec2: { resources: false, resourceLimits: false, timeout: true },
+  // A machine takes its size from the base snapshot; idle stops come from the control plane.
+  boxd: { resources: false, resourceLimits: false, timeout: false },
 } satisfies Record<
   SandboxProviderName,
   { resources: boolean; resourceLimits: boolean; timeout: boolean }

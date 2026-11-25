@@ -483,6 +483,27 @@ test("Boat binds the snapshot named by boat-infra", () => {
   );
 });
 
+test("boxd binds the snapshot named in the settings and its key", () => {
+  const boxd = {
+    SANDBOX_PROVIDER: "boxd",
+    BOXD_API_KEY: "bxd-key",
+    BOXD_BASE_SNAPSHOT: "openinspect-sandbox-0123456789abcdef",
+  };
+  assert.equal(sandboxArtifactName(settings(boxd), HASH), null);
+  const deployed = worker(
+    plan({ ...boxd, BOXD_REGION: "fra", BOXD_MACHINE_PREFIX: "acme" }, { sandboxHash: null }),
+    "control-plane"
+  );
+  assert.equal(deployed.wrangler.vars.BOXD_BASE_SNAPSHOT, "openinspect-sandbox-0123456789abcdef");
+  assert.equal(deployed.wrangler.vars.BOXD_REGION, "fra");
+  assert.equal(deployed.wrangler.vars.BOXD_MACHINE_PREFIX, "acme");
+  assert.equal(deployed.wrangler.vars.BOXD_ORG, undefined);
+  assert.equal(secretActions(deployed).upload.BOXD_API_KEY, "bxd-key");
+  rejects({ SANDBOX_PROVIDER: "boxd", BOXD_BASE_SNAPSHOT: "s" }, /BOXD_API_KEY/);
+  rejects({ SANDBOX_PROVIDER: "boxd", BOXD_API_KEY: "k" }, /BOXD_BASE_SNAPSHOT/);
+  rejects({ ...boxd, BOXD_MACHINE_PREFIX: "Acme_1" }, /BOXD_MACHINE_PREFIX/);
+});
+
 test("E2B binds the template alias Terraform builds", () => {
   const s = settings({
     SANDBOX_PROVIDER: "e2b",

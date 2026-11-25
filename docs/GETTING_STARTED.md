@@ -69,11 +69,11 @@ repositories.
 
 Open-Inspect uses Terraform to automate deployment across multiple cloud providers:
 
-| Provider                                                             | Purpose                          | What Terraform Creates                                                                                  |
-| -------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Cloudflare**                                                       | Control plane, session state     | Workers, KV namespaces, Durable Objects, D1 Database                                                    |
-| **Vercel** _or_ **Cloudflare Workers**                               | Web application                  | Project + env vars (Vercel) _or_ Worker via OpenNext (Cloudflare)                                       |
-| **Modal**, **Daytona**, **Vercel Sandboxes**, **E2B**, _or_ **Boat** | Sandbox execution infrastructure | Modal app deployment, Daytona/Vercel API config, E2B template/API config, _or_ Boat snapshot/API config |
+| Provider                                                                       | Purpose                          | What Terraform Creates                                                                                                              |
+| ------------------------------------------------------------------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Cloudflare**                                                                 | Control plane, session state     | Workers, KV namespaces, Durable Objects, D1 Database                                                                                |
+| **Vercel** _or_ **Cloudflare Workers**                                         | Web application                  | Project + env vars (Vercel) _or_ Worker via OpenNext (Cloudflare)                                                                   |
+| **Modal**, **Daytona**, **Vercel Sandboxes**, **E2B**, **Boat**, _or_ **boxd** | Sandbox execution infrastructure | Modal app deployment, Daytona/Vercel API config, E2B template/API config, Boat snapshot/API config; boxd needs only deploy settings |
 
 > **Web platform choice**: Set `web_platform` in your `terraform.tfvars` to `"vercel"` (default) or
 > `"cloudflare"`. The Cloudflare option deploys the Next.js app as a Cloudflare Worker using
@@ -98,21 +98,22 @@ branding, updating, and troubleshooting.
 Create accounts on these services before continuing. Rows marked _(optional)_ are only needed for
 the matching optional section:
 
-| Service                                                 | Purpose                                                         |
-| ------------------------------------------------------- | --------------------------------------------------------------- |
-| [Cloudflare](https://dash.cloudflare.com)               | Control plane hosting (+ web app if using Cloudflare platform)  |
-| [Vercel](https://vercel.com) _(optional)_               | Web application hosting (only if `web_platform = "vercel"`)     |
-| [Modal](https://modal.com)                              | Sandbox infrastructure (default `sandbox_provider = "modal"`)   |
-| [GitHub](https://github.com/settings/developers)        | OAuth + repository access                                       |
-| [Anthropic](https://console.anthropic.com) _(optional)_ | Claude API (the Slack/Linear bot classifier's default provider) |
-| [Bedrock](https://aws.amazon.com/bedrock) _(optional)_  | Alternative Claude host for the Slack/Linear bot classifier     |
-| [Daytona](https://app.daytona.io) _(optional)_          | Sandbox infrastructure when `sandbox_provider = "daytona"`      |
-| [Vercel Sandboxes](https://vercel.com) _(optional)_     | Sandbox infrastructure when `sandbox_provider = "vercel"`       |
-| [E2B](https://e2b.dev) _(optional)_                     | Sandbox infrastructure when `sandbox_provider = "e2b"`          |
-| [Boat](https://boat.dev) _(optional)_                   | Sandbox infrastructure when `sandbox_provider = "boat"`         |
-| [Slack](https://api.slack.com/apps) _(optional)_        | Slack bot integration                                           |
-| [Linear](https://linear.app) _(optional)_               | Linear Agent integration                                        |
-| GitHub App Webhooks _(optional)_                        | GitHub bot (PR reviews)                                         |
+| Service                                                    | Purpose                                                         |
+| ---------------------------------------------------------- | --------------------------------------------------------------- |
+| [Cloudflare](https://dash.cloudflare.com)                  | Control plane hosting (+ web app if using Cloudflare platform)  |
+| [Vercel](https://vercel.com) _(optional)_                  | Web application hosting (only if `web_platform = "vercel"`)     |
+| [Modal](https://modal.com)                                 | Sandbox infrastructure (default `sandbox_provider = "modal"`)   |
+| [GitHub](https://github.com/settings/developers)           | OAuth + repository access                                       |
+| [Anthropic](https://console.anthropic.com) _(optional)_    | Claude API (the Slack/Linear bot classifier's default provider) |
+| [Bedrock](https://aws.amazon.com/bedrock) _(optional)_     | Alternative Claude host for the Slack/Linear bot classifier     |
+| [Daytona](https://app.daytona.io) _(optional)_             | Sandbox infrastructure when `sandbox_provider = "daytona"`      |
+| [Vercel Sandboxes](https://vercel.com) _(optional)_        | Sandbox infrastructure when `sandbox_provider = "vercel"`       |
+| [E2B](https://e2b.dev) _(optional)_                        | Sandbox infrastructure when `sandbox_provider = "e2b"`          |
+| [Boat](https://boat.dev) _(optional)_                      | Sandbox infrastructure when `sandbox_provider = "boat"`         |
+| [boxd](https://boxd.sh?ref=background-agents) _(optional)_ | Sandbox infrastructure when `sandbox_provider = "boxd"`         |
+| [Slack](https://api.slack.com/apps) _(optional)_           | Slack bot integration                                           |
+| [Linear](https://linear.app) _(optional)_                  | Linear Agent integration                                        |
+| GitHub App Webhooks _(optional)_                           | GitHub bot (PR reviews)                                         |
 
 ### Required Tools
 
@@ -444,7 +445,7 @@ modal_workspace             = "your-modal-workspace"
 modal_environment           = "your-modal-environment"
 modal_environment_web_suffix = "your-modal-web-suffix" # Lowercase letters, digits, dashes; empty for https://workspace--... endpoints
 
-# Sandbox provider: "modal" (default), "modal-vm", "daytona", "vercel", "e2b", or "boat"
+# Sandbox provider: "modal" (default), "modal-vm", "daytona", "vercel", "e2b", "boat", or "boxd"
 # sandbox_provider          = "modal"
 
 # Daytona (only required when sandbox_provider = "daytona")
@@ -820,7 +821,7 @@ reports service liveness, not Owner status.
 Your core deployment is complete. Everything below is optional; follow only the sections you need.
 
 - [Alternative Sandbox Providers](#alternative-sandbox-providers-optional): Daytona, Vercel
-  Sandboxes, E2B, or Boat instead of Modal
+  Sandboxes, E2B, Boat, or boxd instead of Modal
 - [Enable Google Login](#enable-google-login-optional)
 - [Slack Bot](#slack-bot-optional)
 - [Linear Agent](#linear-agent-optional)
@@ -838,7 +839,7 @@ Your core deployment is complete. Everything below is optional; follow only the 
 The core path uses Modal, the default `sandbox_provider`. To run sessions on another provider, set
 `sandbox_provider` in `terraform.tfvars` and follow the matching section below instead of the
 [Modal](#modal) credentials in Step 2. Terraform accepts `modal`, `modal-vm`, `daytona`, `vercel`,
-`e2b`, or `boat`. The `modal-vm` backend uses the same Modal credentials; see
+`e2b`, `boat`, or `boxd`. The `modal-vm` backend uses the same Modal credentials; see
 [Modal VM backend](MODAL_DOCKER.md).
 
 The Cloudflare deploy also needs the provider settings: set `SANDBOX_PROVIDER` and the same values
@@ -969,6 +970,33 @@ For the full runtime, lifecycle, and configuration model, see
 
 > **Important**: the Boat provider has no fleet-wide key of its own. Add the key for the models you
 > plan to use — `ANTHROPIC_API_KEY` for Claude — as a **global secret** in Settings > Secrets after
+> deploying. See [Secrets Management](SECRETS.md) for details.
+
+### boxd
+
+> Only required when `sandbox_provider = "boxd"`.
+
+boxd needs a single credential: a **boxd API key** for the org the sandboxes run in. The control
+plane uses it for the boxd API, and `packages/boxd-infra` uses it to build the base snapshot.
+
+1. Build the base snapshot with the key:
+   ```bash
+   BOXD_API_KEY=bxd_… npm run sandbox:images -- build --provider boxd --output /tmp/boxd-image.json
+   ```
+2. Set `sandbox_provider = "boxd"` in `terraform.tfvars`.
+3. In `deploy.env`, set `SANDBOX_PROVIDER=boxd`, `BOXD_API_KEY`, and `BOXD_BASE_SNAPSHOT` to the
+   snapshot name the build printed. `BOXD_REGION` and `BOXD_ORG` are optional.
+
+The control plane calls the boxd API directly from Cloudflare Workers. Each session runs in its own
+isolated boxd machine: idle sessions are **hibernated** (memory and disk kept) and the next prompt
+wakes the same machine with its files and processes where they were. Rebuild the snapshot when
+`packages/boxd-infra`, `packages/sandbox-images` or `packages/sandbox-runtime` change.
+
+For the full runtime, lifecycle, and configuration model, see
+[boxd Sandbox Provider](BOXD_SANDBOX_PROVIDER.md).
+
+> **Important**: the boxd provider has no fleet-wide key of its own. Add the key for the models you
+> plan to use (`ANTHROPIC_API_KEY` for Claude) as a **global secret** in Settings > Secrets after
 > deploying. See [Secrets Management](SECRETS.md) for details.
 
 ### EC2 (AWS-hosted control plane)

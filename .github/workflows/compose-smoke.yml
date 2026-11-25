@@ -71,6 +71,7 @@ jobs:
             ':(exclude)packages/e2b-infra'
             ':(exclude)packages/boat-infra'
             ':(exclude)packages/ec2-infra'
+            ':(exclude)packages/boxd-infra'
             ':(exclude)packages/sandbox-runtime'
             ':(exclude)terraform'
             ':(exclude,glob)packages/control-plane/src/**/*.test.ts'

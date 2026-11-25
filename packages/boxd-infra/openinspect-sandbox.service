@@ -1,0 +1,15 @@
+[Unit]
+Description=Open-Inspect sandbox runtime
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/openinspect/session.json
+
+[Service]
+Type=exec
+ExecStart=/opt/openinspect/boxd/launcher.sh run
+Restart=no
+KillMode=mixed
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

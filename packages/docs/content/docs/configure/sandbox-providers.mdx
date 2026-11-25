@@ -11,6 +11,7 @@ relatedCode:
   - docs/E2B_SANDBOX_PROVIDER.md
   - docs/BOAT_SANDBOX_PROVIDER.md
   - docs/EC2_SANDBOX_PROVIDER.md
+  - docs/BOXD_SANDBOX_PROVIDER.md
   - docs/VERCEL_SANDBOX_PROVIDER.md
   - packages/shared/src/types/integrations.ts
   - packages/web/src/lib/sandbox-provider.ts
@@ -18,13 +19,14 @@ relatedCode:
   - packages/control-plane/src/sandbox/providers/vercel/provider.ts
   - packages/control-plane/src/sandbox/providers/boat-provider.ts
   - packages/control-plane/src/sandbox/providers/ec2-provider.ts
+  - packages/control-plane/src/sandbox/providers/boxd-provider.ts
 ---
 
 This page compares the sandbox providers a deployment can run on: the operator picks one (`sandbox_provider` in the deployment configuration) for every session, and each runs the same [sandbox runtime](/reference/sandbox-environment) but differs in how sandboxes start, how saved state is kept, and which [sandbox settings](/configure/sandbox-settings) it honors.
 
 ## Which provider am I on?
 
-Users cannot switch providers from the app. Settings › Sandbox names the provider when it cannot honor a field, for example "Per-session CPU and memory overrides are unavailable for daytona; resources are configured by the deployment." A timeout-only note ("Per-session timeout overrides are unavailable for ...") appears on Daytona as well. The resources note also appears on EC2. No note means Modal, modal-vm, Vercel Sandboxes, or Boat; ask your operator which one.
+Users cannot switch providers from the app. Settings › Sandbox names the provider when it cannot honor a field, for example "Per-session CPU and memory overrides are unavailable for daytona; resources are configured by the deployment." A timeout-only note ("Per-session timeout overrides are unavailable for ...") appears on Daytona as well. The resources note also appears on EC2, and both notes on boxd. No note means Modal, modal-vm, Vercel Sandboxes, or Boat; ask your operator which one.
 
 ## Comparison
 
@@ -39,7 +41,7 @@ Users cannot switch providers from the app. Settings › Sandbox names the provi
 
 "Yes" for CPU and memory means the `cpuCores` and `memoryMib` fields under Settings › Sandbox take effect. On providers marked "No", those fields are dropped from the session's effective settings. The same applies to `sandboxTimeoutMs` where the timeout column says "No". The settings page hides the fields the current provider cannot honor.
 
-Saved state matters for follow-up prompts: after confirmed shutdown, Modal, modal-vm, and Vercel can restore a saved snapshot into a new sandbox. Daytona, E2B, Boat, and EC2 resume the retained sandbox in place.
+Saved state matters for follow-up prompts: after confirmed shutdown, Modal, modal-vm, and Vercel can restore a saved snapshot into a new sandbox. Daytona, E2B, Boat, EC2, and boxd resume the retained sandbox in place.
 
 The two saved-state models side by side:
 
@@ -146,3 +148,12 @@ When switching providers, keep the previous provider's credentials configured un
 - [Sandbox settings](/configure/sandbox-settings)
 - [Prebuilt images](/configure/prebuilt-images)
 - [Deployment](/administration/deployment)
+
+## boxd
+
+- Each session runs in its own isolated [boxd](https://boxd.sh?ref=background-agents) machine, created from a base snapshot the operator builds. It works with the control plane on Cloudflare and on the Node host.
+- Idle sessions are hibernated after the shared inactivity timeout: the machine's memory and disk are kept, and the next prompt wakes the same machine with its files and running processes where they were. Archiving hibernates too; a cancelled or discarded session's machine is deleted. If the machine is gone, a fresh one is spawned.
+- code-server, the web terminal, VNC, and tunnel ports are public HTTPS URLs on the machine (`https://<name>.<machine>.boxd.sh`). code-server and VNC keep their own passwords.
+- Prebuilt images are not available; every session runs `setup.sh` on its first boot.
+- CPU, memory, and sandbox timeout settings are not honored; every machine has the size of the base snapshot.
+- boxd sandboxes take every model API key from Settings › Secrets; there is no deployment-wide key.

@@ -68,7 +68,7 @@ export interface EnvConfig {
   ALLOWED_GITHUB_ORGS?: string;
   UNSAFE_ALLOW_ALL_USERS?: string;
   CF_ACCOUNT_ID?: string; // Cloudflare account ID
-  SANDBOX_PROVIDER?: string; // "modal" (default), "modal-vm", "daytona", "vercel", "e2b", "boat", or "ec2"
+  SANDBOX_PROVIDER?: string; // "modal" (default), "modal-vm", "daytona", "vercel", "e2b", "boat", "ec2", or "boxd"
   MODAL_WORKSPACE?: string; // Modal workspace name
   MODAL_ENVIRONMENT?: string; // Modal environment name for dashboard URLs
   MODAL_ENVIRONMENT_WEB_SUFFIX?: string; // Modal environment web suffix for endpoint URLs
@@ -110,6 +110,13 @@ export interface EnvConfig {
   EC2_SANDBOX_SECURITY_GROUP_ID?: string; // Security group for sandboxes
   EC2_SANDBOX_INSTANCE_PROFILE_ARN?: string; // Instance profile for sandboxes; its role grants nothing
   EC2_SANDBOX_CONTROL_PLANE_PRIVATE_HOST?: string; // DNS name resolving, inside the sandboxes' VPC, to the control plane's private address
+
+  BOXD_API_KEY?: string; // boxd API key (SDK auth + sandbox access password HMAC)
+  BOXD_BASE_SNAPSHOT?: string; // boxd snapshot built by boxd-infra; every session machine is created from it
+  BOXD_ORG?: string; // Optional boxd org machines are created in; defaults to the key's org
+  BOXD_REGION?: string; // Optional boxd region (fra, nyc); defaults to the key's region
+  BOXD_BASE_URL?: string; // Optional boxd API endpoint; defaults to production
+  BOXD_MACHINE_PREFIX?: string; // Machine name prefix; defaults to DEFAULT_BOXD_MACHINE_PREFIX
 
   // Sandbox lifecycle configuration
   SANDBOX_INACTIVITY_TIMEOUT_MS?: string; // Inactivity timeout in ms; defaults to DEFAULT_INACTIVITY_CONFIG.timeoutMs

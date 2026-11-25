@@ -5,12 +5,19 @@ import {
   type BoatMachineType,
   type BoatRestClient,
 } from "./boat-rest-client";
+import { createBoxdSandboxApi } from "./boxd-api";
 import { createModalClient } from "./client";
 import { createDaytonaRestClient, type DaytonaRestClient } from "./daytona-rest-client";
 import { createE2BRestClient } from "./e2b-rest-client";
 import { resolveSandboxBackendName, type SandboxBackendName } from "./provider-name";
 import type { SandboxProvider } from "./provider";
 import { createBoatProvider, type BoatSandboxProvider } from "./providers/boat-provider";
+import {
+  createBoxdProvider,
+  DEFAULT_BOXD_MACHINE_PREFIX,
+  isBoxdMachinePrefix,
+  type BoxdSandboxProvider,
+} from "./providers/boxd-provider";
 import { createDaytonaProvider, type DaytonaSandboxProvider } from "./providers/daytona-provider";
 import { createEc2Provider, type Ec2SandboxProvider } from "./providers/ec2-provider";
 import type { SandboxBootstrapStore } from "./bootstrap";
@@ -222,7 +229,36 @@ function createEc2ProviderFromEnv(
   });
 }
 
+function createBoxdProviderFromEnv(env: Env): BoxdSandboxProvider {
+  const apiKey = env.BOXD_API_KEY?.trim();
+  const baseSnapshot = env.BOXD_BASE_SNAPSHOT?.trim();
+  if (!apiKey || !baseSnapshot) {
+    throw new Error("BOXD_API_KEY and BOXD_BASE_SNAPSHOT are required when SANDBOX_PROVIDER=boxd");
+  }
+  const machinePrefix = env.BOXD_MACHINE_PREFIX?.trim() || DEFAULT_BOXD_MACHINE_PREFIX;
+  if (!isBoxdMachinePrefix(machinePrefix)) {
+    throw new Error(
+      "BOXD_MACHINE_PREFIX must be 1-40 lowercase letters, digits or dashes, starting with a letter or digit"
+    );
+  }
+
+  const api = createBoxdSandboxApi({
+    apiKey,
+    baseUrl: env.BOXD_BASE_URL?.trim() || undefined,
+    region: env.BOXD_REGION?.trim() || undefined,
+    org: env.BOXD_ORG?.trim() || undefined,
+  });
+  return createBoxdProvider(api, {
+    scmProvider: resolveScmProviderFromEnv(env.SCM_PROVIDER),
+    sandboxAccessPasswordSecret: apiKey,
+    baseSnapshot,
+    machinePrefix,
+    deploymentName: env.DEPLOYMENT_NAME,
+  });
+}
+
 export function createSandboxProviderFromEnv(env: Env, backend: "boat"): BoatSandboxProvider;
+export function createSandboxProviderFromEnv(env: Env, backend: "boxd"): BoxdSandboxProvider;
 export function createSandboxProviderFromEnv(env: Env, backend: "daytona"): DaytonaSandboxProvider;
 export function createSandboxProviderFromEnv(env: Env, backend: "e2b"): E2BSandboxProvider;
 export function createSandboxProviderFromEnv(
@@ -250,6 +286,8 @@ export function createSandboxProviderFromEnv(
       return createEc2ProviderFromEnv(env, bootstrapStore);
     case "boat":
       return createBoatProviderFromEnv(env);
+    case "boxd":
+      return createBoxdProviderFromEnv(env);
     case "daytona":
       return createDaytonaProviderFromEnv(env);
     case "vercel":

@@ -16,7 +16,7 @@ from .configuration import IMAGE_PACKAGE, RUNTIME_PACKAGE, read_json, runtime_en
 from .locks import export_requirements, update_locks
 
 DOCKER_PACKAGES = ("engine", "cli", "containerd", "buildx", "compose")
-PROVIDERS = ("modal", "daytona", "e2b", "vercel", "boat", "ec2")
+PROVIDERS = ("modal", "daytona", "e2b", "vercel", "boat", "ec2", "boxd")
 EXCLUDED = {
     ".terraform",
     ".git",
@@ -47,6 +47,8 @@ INFRA_MODULES = {
     # The AMI is built by hand and selected with a Terraform variable, so no
     # module's inputs feed its build.
     "ec2": None,
+    # Built by hand like EC2's AMI; the snapshot name is set in the control plane's settings.
+    "boxd": None,
 }
 
 

@@ -11,6 +11,7 @@ on:
       - "packages/e2b-infra/**"
       - "packages/boat-infra/**"
       - "packages/ec2-infra/**"
+      - "packages/boxd-infra/**"
       - "packages/modal-infra/**"
       - "packages/sandbox-runtime/**"
       - "packages/sandbox-images/**"
@@ -32,6 +33,7 @@ on:
       - "packages/e2b-infra/**"
       - "packages/boat-infra/**"
       - "packages/ec2-infra/**"
+      - "packages/boxd-infra/**"
       - "packages/modal-infra/**"
       - "packages/sandbox-runtime/**"
       - "packages/sandbox-images/**"
@@ -105,10 +107,10 @@ jobs:
           pip install -e "packages/modal-infra[dev]"
 
       - name: Run Ruff linter
-        run: ruff check packages/modal-infra/ packages/e2b-infra/ packages/daytona-infra/ packages/boat-infra/ packages/ec2-infra/ packages/sandbox-images/
+        run: ruff check packages/modal-infra/ packages/e2b-infra/ packages/daytona-infra/ packages/boat-infra/ packages/ec2-infra/ packages/boxd-infra/ packages/sandbox-images/
 
       - name: Run Ruff formatter check
-        run: ruff format --check packages/modal-infra/ packages/e2b-infra/ packages/daytona-infra/ packages/boat-infra/ packages/ec2-infra/ packages/sandbox-images/
+        run: ruff format --check packages/modal-infra/ packages/e2b-infra/ packages/daytona-infra/ packages/boat-infra/ packages/ec2-infra/ packages/boxd-infra/ packages/sandbox-images/
 
   typecheck-python:
     name: TypeCheck (Python)

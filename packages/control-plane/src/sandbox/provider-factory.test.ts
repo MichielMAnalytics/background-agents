@@ -156,4 +156,31 @@ describe("createSandboxProviderFromEnv", () => {
       expect(createSandboxProviderFromEnv(env, "ec2", bootstrapStore).name).toBe("ec2");
     });
   });
+
+  describe("boxd", () => {
+    const boxdSettings = {
+      BOXD_API_KEY: "test-api-key",
+      BOXD_BASE_SNAPSHOT: "openinspect-sandbox-1",
+    };
+
+    it.each([
+      ["the API key", { BOXD_BASE_SNAPSHOT: "openinspect-sandbox-1" }],
+      ["the base snapshot", { BOXD_API_KEY: "test-api-key" }],
+    ])("needs %s", (_name, overrides) => {
+      expect(() => createSandboxProviderFromEnv(createEnv(overrides), "boxd")).toThrow(
+        "BOXD_API_KEY and BOXD_BASE_SNAPSHOT are required when SANDBOX_PROVIDER=boxd"
+      );
+    });
+
+    it("rejects a machine prefix boxd cannot name a machine with", () => {
+      const env = createEnv({ ...boxdSettings, BOXD_MACHINE_PREFIX: "Open_Inspect" });
+      expect(() => createSandboxProviderFromEnv(env, "boxd")).toThrow("BOXD_MACHINE_PREFIX");
+    });
+
+    it("creates the provider from complete configuration", () => {
+      const provider = createSandboxProviderFromEnv(createEnv(boxdSettings), "boxd");
+      expect(provider.name).toBe("boxd");
+      expect(provider.capabilities.supportsPersistentResume).toBe(true);
+    });
+  });
 });

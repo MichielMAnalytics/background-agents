@@ -54,7 +54,7 @@ export const DEFAULTS = Object.freeze({
   BOAT_SANDBOX_TYPE: "default",
 });
 
-const SANDBOX_PROVIDERS = ["modal", "modal-vm", "daytona", "vercel", "e2b", "boat"];
+const SANDBOX_PROVIDERS = ["modal", "modal-vm", "daytona", "vercel", "e2b", "boat", "boxd"];
 const LOCATION_HINTS = [
   "wnam",
   "enam",
@@ -259,6 +259,12 @@ export function readSettings(env) {
     boatBaseSnapshot: str("BOAT_BASE_SNAPSHOT"),
     boatOrg: str("BOAT_ORG"),
     boatSandboxType: str("BOAT_SANDBOX_TYPE"),
+
+    boxdApiKey: str("BOXD_API_KEY"),
+    boxdBaseSnapshot: str("BOXD_BASE_SNAPSHOT"),
+    boxdOrg: str("BOXD_ORG"),
+    boxdRegion: str("BOXD_REGION"),
+    boxdMachinePrefix: str("BOXD_MACHINE_PREFIX"),
 
     sessionDoLocationHint: trimmed("SESSION_DO_LOCATION_HINT"),
     sandboxInactivityTimeoutMs: int("SANDBOX_INACTIVITY_TIMEOUT_MS"),
@@ -497,6 +503,16 @@ function validate(s, errors) {
   fail(
     !boat || BOAT_SANDBOX_TYPES.includes(s.boatSandboxType),
     "BOAT_SANDBOX_TYPE must be 'small', 'default', 'large', or 'xlarge' when SANDBOX_PROVIDER = 'boat'."
+  );
+  const boxd = s.sandboxProvider === "boxd";
+  fail(!boxd || s.boxdApiKey !== "", "BOXD_API_KEY must be set when SANDBOX_PROVIDER = 'boxd'.");
+  fail(
+    !boxd || s.boxdBaseSnapshot !== "",
+    "BOXD_BASE_SNAPSHOT must be set when SANDBOX_PROVIDER = 'boxd'."
+  );
+  fail(
+    !boxd || s.boxdMachinePrefix === "" || /^[a-z0-9][a-z0-9-]{0,39}$/.test(s.boxdMachinePrefix),
+    "BOXD_MACHINE_PREFIX must be 1-40 lowercase letters, digits or dashes, starting with a letter or digit."
   );
 
   // Control-plane runtime settings
@@ -744,6 +760,14 @@ function controlPlaneVars(s, artifact) {
     ...(provider === "boat"
       ? { BOAT_BASE_SNAPSHOT: artifact, BOAT_SANDBOX_TYPE: s.boatSandboxType }
       : {}),
+    // The boxd base snapshot is built by hand (packages/boxd-infra) and named
+    // in the settings, as Vercel's manual snapshot override is.
+    ...(provider === "boxd" ? { BOXD_BASE_SNAPSHOT: s.boxdBaseSnapshot } : {}),
+    ...(provider === "boxd" && s.boxdOrg !== "" ? { BOXD_ORG: s.boxdOrg } : {}),
+    ...(provider === "boxd" && s.boxdRegion !== "" ? { BOXD_REGION: s.boxdRegion } : {}),
+    ...(provider === "boxd" && s.boxdMachinePrefix !== ""
+      ? { BOXD_MACHINE_PREFIX: s.boxdMachinePrefix }
+      : {}),
   };
 }
 
@@ -775,6 +799,7 @@ function controlPlaneSecrets(s) {
     VERCEL_TOKEN: secret(!blank(s.vercelSandboxProjectId) ? s.vercelSandboxToken : ""),
     E2B_API_KEY: secret(s.sandboxProvider === "e2b" ? s.e2bApiKey : ""),
     BOAT_API_KEY: secret(s.boatApiKey),
+    BOXD_API_KEY: secret(s.sandboxProvider === "boxd" ? s.boxdApiKey : ""),
     // Authorizes the agent-initiated `slack-notify` endpoint.
     SLACK_BOT_TOKEN: secret(s.slackBotToken),
   };

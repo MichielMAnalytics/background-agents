@@ -175,6 +175,8 @@ modal_api_secret = ""
 # - "vercel": Vercel Sandbox API with filesystem snapshot restore
 # - "e2b": direct E2B REST API integration with pause/resume
 # - "boat": direct Boat REST API integration with stop/resume (archived snapshot)
+# - "boxd": boxd microVMs with hibernate/wake; the base snapshot is built by hand
+#   (packages/boxd-infra) and set with the BOXD_BASE_SNAPSHOT deploy setting
 # Select "modal-vm" for Docker-capable VMs (deployment-wide; see docs/MODAL_DOCKER.md).
 sandbox_provider = "modal"
 

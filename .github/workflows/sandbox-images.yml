@@ -31,6 +31,8 @@ jobs:
             base: ubuntu:24.04
           - provider: ec2
             base: ubuntu:24.04
+          - provider: boxd
+            base: ubuntu:24.04
     steps:
       - uses: actions/checkout@v7
         with:
