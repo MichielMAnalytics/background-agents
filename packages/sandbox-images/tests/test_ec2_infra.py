@@ -73,3 +73,15 @@ def test_a_rejected_file_never_echoes_its_secrets(tmp_path, capsys):
     assert "env.N" in error
     assert "secret-value" not in error
     assert "12345" not in error
+
+
+def test_chrome_apparmor_profile_covers_the_installed_chrome():
+    install = Path(__file__).resolve().parents[1] / "install/agent-browser.json"
+    chrome = json.loads(install.read_text())["executablePath"]
+    profile = (INFRA / "openinspect-chrome.apparmor").read_text()
+
+    assert f"profile openinspect-chrome {chrome} " in profile
+    assert "userns," in profile
+    assert "apparmor_parser --replace /etc/apparmor.d/openinspect-chrome" in SCRIPTS[
+        "build_script"
+    ]("https://bucket.example/key")

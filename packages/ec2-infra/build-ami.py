@@ -38,10 +38,20 @@ BUILD_TIMEOUT_SECONDS = 60 * 60
 VERIFY_TIMEOUT_SECONDS = 20 * 60
 IMAGE_TIMEOUT_SECONDS = 45 * 60
 CONSOLE_TAIL_CHARS = 4000
+# EC2 can publish an instance's console output several minutes after it powers off
+CONSOLE_LAG_SECONDS = 10 * 60
 
 
 class ImageBuildError(RuntimeError):
     """An image build or verification step did not succeed."""
+
+
+def step_failed(instance_id: str, console: str) -> ImageBuildError:
+    """The error for a failed step, quoting the console up to its failure marker, not the shutdown."""
+    end = console.index(FAILED_MARKER)
+    end = console.find("\n", end)
+    shown = console[: None if end < 0 else end][-CONSOLE_TAIL_CHARS:]
+    return ImageBuildError(f"Image step failed on {instance_id}:\n{shown}")
 
 
 class Ec2ImageBuilder:
@@ -122,23 +132,29 @@ class Ec2ImageBuilder:
             time.sleep(POLL_INTERVAL_SECONDS)
             console = self.read_console(instance_id)
             if FAILED_MARKER in console:
-                raise ImageBuildError(
-                    f"Image step failed on {instance_id}:\n{console[-CONSOLE_TAIL_CHARS:]}"
-                )
+                raise step_failed(instance_id, console)
             state = self.ec2.describe_instances(InstanceIds=[instance_id])["Reservations"][0][
                 "Instances"
             ][0]["State"]["Name"]
             if state == "stopped":
-                if OK_MARKER in console:
-                    return
-                # EC2's console output can lag the power-off.
-                time.sleep(POLL_INTERVAL_SECONDS)
-                if OK_MARKER in self.read_console(instance_id):
-                    return
-                raise ImageBuildError(f"{instance_id} stopped without reporting success")
+                self.wait_for_lagging_marker(instance_id, console)
+                return
             if state in ("terminated", "shutting-down"):
                 raise ImageBuildError(f"{instance_id} ended unexpectedly ({state})")
         raise TimeoutError(f"{instance_id} did not finish within {timeout_seconds}s")
+
+    def wait_for_lagging_marker(self, instance_id: str, console: str) -> None:
+        """Waits out the console's publication lag after a stop before reading the step's result."""
+        deadline = time.monotonic() + CONSOLE_LAG_SECONDS
+        while True:
+            if FAILED_MARKER in console:
+                raise step_failed(instance_id, console)
+            if OK_MARKER in console:
+                return
+            if time.monotonic() >= deadline:
+                raise ImageBuildError(f"{instance_id} stopped without reporting success")
+            time.sleep(POLL_INTERVAL_SECONDS)
+            console = self.read_console(instance_id)
 
     def read_console(self, instance_id: str) -> str:
         output = self.ec2.get_console_output(InstanceId=instance_id, Latest=True).get("Output")

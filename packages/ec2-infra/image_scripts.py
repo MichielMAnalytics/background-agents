@@ -11,6 +11,7 @@ EC2_FILES = {
     "launcher.sh": ("/opt/openinspect/ec2/launcher.sh", "0755"),
     "exec-runtime.py": ("/opt/openinspect/ec2/exec-runtime.py", "0755"),
     "openinspect-sandbox.service": ("/etc/systemd/system/openinspect-sandbox.service", "0644"),
+    "openinspect-chrome.apparmor": ("/etc/apparmor.d/openinspect-chrome", "0644"),
 }
 
 # The serial console is the only output build-ami.py reads.
@@ -43,6 +44,7 @@ mkdir -p /tmp/openinspect-image
 tar -xzf /tmp/openinspect-image.tar.gz -C /tmp/openinspect-image
 bash /tmp/openinspect-image/packages/sandbox-images/install/install.sh
 {install}
+apparmor_parser --replace /etc/apparmor.d/openinspect-chrome
 printf '%s\\n' 'user ALL=(ALL) NOPASSWD:ALL' >/etc/sudoers.d/90-openinspect-user
 chmod 0440 /etc/sudoers.d/90-openinspect-user
 systemctl daemon-reload

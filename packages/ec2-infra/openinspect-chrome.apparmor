@@ -1,0 +1,11 @@
+# Ubuntu 23.10+ denies unprivileged user namespaces unless a binary's AppArmor profile allows
+# them, and Chrome needs one for its own sandbox. Grant exactly that to the bundled Chrome; it
+# stays otherwise unconfined, as it is without this profile.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile openinspect-chrome /opt/openinspect/chrome/chrome-linux64/chrome flags=(unconfined) {
+  userns,
+
+  include if exists <local/openinspect-chrome>
+}
