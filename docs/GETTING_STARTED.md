@@ -117,7 +117,7 @@ the matching optional section:
 ### Required Tools
 
 ```bash
-# Terraform (1.14.0+; see terraform/environments/production/versions.tf)
+# Terraform (1.17.0+; see terraform/environments/production/versions.tf)
 brew install terraform
 
 # Node.js (24+). node@24 is keg-only, so put it on PATH (add the export to

@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 env:
-  TF_VERSION: "1.14.8"
+  TF_VERSION: "~1.17.2"
   TF_WORKING_DIR: ${{ inputs.working-directory }}
 
 jobs:
@@ -113,7 +113,7 @@ jobs:
       - name: Terraform Init
         id: init
         run: |
-          terraform init -backend=false
+          terraform init -backend=false -lockfile=readonly
         working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: Terraform Validate
@@ -127,14 +127,14 @@ jobs:
       - name: Terraform Tests
         id: test
         run: |
-          terraform init -backend=false
+          terraform init -backend=false -lockfile=readonly
           terraform test
         working-directory: terraform/modules/cloudflare-environment
 
       - name: Modal module contract tests
         id: modal_test
         run: |
-          terraform init -backend=false
+          terraform init -backend=false -lockfile=readonly
           terraform test
         working-directory: terraform/modules/modal-app
 
@@ -163,6 +163,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           terraform init \
+            -lockfile=readonly \
             -backend-config="access_key=${{ secrets.R2_ACCESS_KEY_ID }}" \
             -backend-config="secret_key=${{ secrets.R2_SECRET_ACCESS_KEY }}" \
             -backend-config="endpoints={s3=\"https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com\"}"
@@ -391,6 +392,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           terraform init \
+            -lockfile=readonly \
             -backend-config="access_key=${{ secrets.R2_ACCESS_KEY_ID }}" \
             -backend-config="secret_key=${{ secrets.R2_SECRET_ACCESS_KEY }}" \
             -backend-config="endpoints={s3=\"https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com\"}"

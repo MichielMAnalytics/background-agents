@@ -63,7 +63,7 @@ Use AskUserQuestion to gather:
 
 ```bash
 node --version       # must match .nvmrc (24 or newer): the deploy uses `node --env-file`
-terraform version    # 1.14.0 or newer
+terraform version    # 1.17.0 or newer
 uv --version         # Python tooling for the Modal and sandbox steps
 gh auth status       # creates the repository and, later, Actions secrets
 wrangler --version   # used below to create the Terraform state bucket

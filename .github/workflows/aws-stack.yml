@@ -51,7 +51,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TF_VERSION: "1.14.8"
+  TF_VERSION: "~1.17.2"
 
 jobs:
   validate:
@@ -84,7 +84,7 @@ jobs:
         run: |
           for environment in aws-staging aws-production; do
             echo "::group::$environment"
-            terraform -chdir="terraform/environments/$environment" init -backend=false -no-color
+            terraform -chdir="terraform/environments/$environment" init -backend=false -lockfile=readonly -no-color
             terraform -chdir="terraform/environments/$environment" validate -no-color
             echo "::endgroup::"
           done
@@ -95,5 +95,5 @@ jobs:
       # moment it lands.
       - name: Terraform Test (AWS control-plane module)
         run: |
-          terraform -chdir=terraform/modules/aws-control-plane init -backend=false -no-color
+          terraform -chdir=terraform/modules/aws-control-plane init -backend=false -lockfile=readonly -no-color
           terraform -chdir=terraform/modules/aws-control-plane test -no-color

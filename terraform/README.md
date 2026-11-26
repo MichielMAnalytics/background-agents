@@ -55,7 +55,7 @@ configuration. For AWS deployment instructions, see [AWS staging](environments/a
 ### 1. Required Tools
 
 ```bash
-# Terraform >= 1.14.0 (see environments/production/versions.tf)
+# Terraform >= 1.17.0 (see environments/production/versions.tf)
 brew install terraform
 
 # Modal CLI (for Modal deployments)
@@ -277,7 +277,7 @@ exist first:
    node scripts/cloudflare-deploy/sync-generated-secrets.mjs --environment <environment>
    ```
 
-   This needs Terraform 1.14 or newer and `gh` authenticated with admin access to the repository.
+   This needs Terraform 1.17 or newer and `gh` authenticated with admin access to the repository.
 
 4. **An existing production, before merging the split.** The first apply on merge is `-auto-approve`
    and performs the state handoff, so look at it first. The pull request's own plan job only helps

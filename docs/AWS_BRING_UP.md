@@ -16,7 +16,7 @@ same module with different sizes.
 
 - An AWS account and credentials with permission to create VPC, EC2, EBS, S3, ECR, IAM, SSM,
   CloudWatch and EventBridge Scheduler resources.
-- Terraform >= 1.14, the AWS CLI v2, and the Session Manager plugin (`session-manager-plugin`).
+- Terraform >= 1.17, the AWS CLI v2, and the Session Manager plugin (`session-manager-plugin`).
 - A hostname you control the DNS for.
 - A GitHub App for the control plane, as on any other deployment.
 
