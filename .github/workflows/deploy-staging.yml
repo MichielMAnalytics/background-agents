@@ -104,13 +104,15 @@ jobs:
     steps:
       # The head commit the event named, from the fork if need be (main's tip for
       # a manual run). This is the code the reviewer approved; a later push is a
-      # new run and a new approval.
+      # new run and a new approval. The checkout of a pull_request_target head
+      # is deliberate, so the unsafe-checkout guard is opted out of here.
       - name: Checkout
         uses: actions/checkout@v7
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+          allow-unsafe-pr-checkout: true
 
       # No caches: a pull_request_target run saves them under main's scope, so
       # code from a fork could plant a cache that production's workflows restore.
