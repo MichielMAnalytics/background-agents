@@ -14,14 +14,14 @@ import {
   WS_CLOSE_SERVICE_RESTART,
   WS_CLOSE_TRY_AGAIN_LATER,
 } from "@open-inspect/shared/types/websocket";
+import { CONTROL_PLANE_WS_URL } from "@/lib/control-plane-ws-url";
 
 function parseWsMessage(raw: unknown): ServerMessage | null {
   const result = serverMessageSchema.safeParse(raw);
   return result.success ? result.data : null;
 }
 
-// WebSocket URL (should come from env in production)
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8787";
+const WS_URL = CONTROL_PLANE_WS_URL;
 
 // WebSocket close codes
 const WS_CLOSE_AUTH_REQUIRED = 4001;

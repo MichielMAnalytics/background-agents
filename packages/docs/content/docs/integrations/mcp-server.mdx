@@ -4,37 +4,46 @@ description: Let Claude Code or another MCP client investigate sessions and auto
 audience: user
 owner: integrations
 status: published
-lastReviewed: "2026-11-22"
+lastReviewed: "2026-11-25"
 relatedCode:
+  - packages/control-plane/src/routes/hosted-mcp.ts
+  - packages/control-plane/src/mcp-tools/tools.ts
+  - packages/control-plane/src/mcp-tools/client.ts
   - packages/mcp-server/README.md
-  - packages/mcp-server/src/tools.ts
-  - packages/mcp-server/src/client.ts
   - packages/control-plane/src/authorization/personal-access-token-policy.ts
   - packages/control-plane/src/router.policy.test.ts
 ---
 
-The OpenInspect MCP server lets an MCP client such as Claude Code read your sessions and automation runs, and optionally start and steer sessions, create and run automations, or import skills, without opening the web UI. It runs on your machine and authenticates with a [personal access token](/integrations/personal-access-tokens).
+The OpenInspect MCP server lets an MCP client such as Claude Code read your sessions and automation runs, and optionally start and steer sessions, create and run automations, or import skills, without opening the web UI. Your control plane serves it at `/mcp`, and a client authenticates with a [personal access token](/integrations/personal-access-tokens).
 
 ## Set it up
 
 1. Create a token under **Settings › Access tokens**. For investigation, select **Read-only**. Add write permissions only if you want the assistant to make changes; see the table below.
-2. Build the server from a checkout of the repository:
+2. Register the server with your client, using your control plane's URL:
 
    ```bash
-   npm run build -w @open-inspect/shared
-   npm run build -w @open-inspect/mcp-server
+   claude mcp add --transport http open-inspect https://<your-control-plane>/mcp \
+     --header "Authorization: Bearer oi_pat_..."
    ```
 
-3. Register it with your client:
+   Administrators find the exact URL under **Settings › API policy**. A client that only runs local servers can reach it through a bridge such as `mcp-remote` with the same header.
 
-   ```bash
-   claude mcp add open-inspect \
-     --env OPEN_INSPECT_CONTROL_PLANE_URL=https://<your-control-plane> \
-     --env OPEN_INSPECT_TOKEN=oi_pat_... \
-     -- node /absolute/path/to/packages/mcp-server/dist/index.js
-   ```
+The server is stateless: each request stands alone, so a client checks on a session by calling `get_session` again rather than waiting for a notification. An administrator can turn MCP off under **Settings › API policy**; tokens then keep working with the API directly.
 
-The control plane URL must use `https://`; plain `http://` is accepted only for a loopback address such as `localhost`.
+### Local server (deprecated)
+
+The repository also contains a local stdio server with the same tools, in `packages/mcp-server`. It will be removed once the hosted server covers everything it does; prefer the hosted URL above. To run it, build it from a checkout and register it:
+
+```bash
+npm run build -w @open-inspect/shared
+npm run build -w @open-inspect/mcp-server
+claude mcp add open-inspect \
+  --env OPEN_INSPECT_CONTROL_PLANE_URL=https://<your-control-plane> \
+  --env OPEN_INSPECT_TOKEN=oi_pat_... \
+  -- node /absolute/path/to/packages/mcp-server/dist/index.js
+```
+
+Its control plane URL must use `https://`; plain `http://` is accepted only for a loopback address such as `localhost`.
 
 ## What it can do
 
@@ -49,7 +58,7 @@ The control plane URL must use `https://`; plain `http://` is accepted only for 
 | `trigger_automation`                                                                                                      | **Run your automations** or **Run any automation**, **Create sessions**, and use of its targets |
 | `import_skill_from_git`, `update_skill_from_git`                                                                          | **Manage skills** (administrators), which always comes with **Read skills**                     |
 
-A token without a tool's permission gets an error, which usually names the missing permission or points to the tool's description, where the needed grant is stated. The token never exceeds your own role or your workspace's [token policy](/administration/personal-access-tokens), and nothing it does can stop, archive, or delete a session, open a session's sandbox editor, terminal, or tunnels, delete or pause an automation, delete a skill, or reach secrets or workspace settings. A run started with `trigger_automation` uses only what the token was granted, even where your role allows more.
+A token without a tool's permission gets an error, which usually names the missing permission or points to the tool's description, where the needed grant is stated. The token never exceeds your own role or your workspace's [API policy](/administration/personal-access-tokens), and nothing it does can stop, archive, or delete a session, open a session's sandbox editor, terminal, or tunnels, delete or pause an automation, delete a skill, or reach secrets or workspace settings. A run started with `trigger_automation` uses only what the token was granted, even where your role allows more.
 
 ## Keep the assistant in check
 

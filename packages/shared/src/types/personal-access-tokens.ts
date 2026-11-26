@@ -229,6 +229,12 @@ export type ListPersonalAccessTokensResponse = z.infer<
  */
 export const personalAccessTokenPolicySchema = z.strictObject({
   enabled: z.boolean(),
+  /**
+   * Whether the hosted MCP server at `/mcp` serves requests. Tokens still work against the API
+   * directly when it is off. Optional on a write, where omitting it keeps the stored value, so a
+   * client that predates it cannot turn it back on by saving the rest of the policy.
+   */
+  mcpEnabled: z.boolean().optional(),
   /** Days a token may live, counted from issue. Null: PERSONAL_ACCESS_TOKEN_MAX_LIFETIME_DAYS. */
   maxLifetimeDays: z
     .number()
@@ -243,6 +249,7 @@ export type PersonalAccessTokenPolicy = z.infer<typeof personalAccessTokenPolicy
 
 /** The policy as administrators edit it: the rules plus the revision an update must name. */
 export const personalAccessTokenPolicySnapshotSchema = personalAccessTokenPolicySchema.extend({
+  mcpEnabled: z.boolean(),
   revision: z.number().int().nonnegative(),
   updatedAt: z.number().nullable(),
   updatedByUserId: z.string().nullable(),

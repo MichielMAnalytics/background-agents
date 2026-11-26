@@ -14,6 +14,7 @@ import type { SqlDatabase } from "./sql-database";
 
 interface PolicyRow {
   enabled: number;
+  mcp_enabled: number;
   max_lifetime_days: number | null;
   allowed_permissions_json: string | null;
   revision: number;
@@ -36,6 +37,7 @@ function storedCeiling(json: string | null): PersonalAccessTokenPolicy["allowedP
 function toSnapshot(row: PolicyRow): PersonalAccessTokenPolicySnapshot {
   return {
     enabled: row.enabled === 1,
+    mcpEnabled: row.mcp_enabled === 1,
     maxLifetimeDays: row.max_lifetime_days,
     allowedPermissions: storedCeiling(row.allowed_permissions_json),
     revision: row.revision,
@@ -47,6 +49,7 @@ function toSnapshot(row: PolicyRow): PersonalAccessTokenPolicySnapshot {
 function rulesOf(policy: PersonalAccessTokenPolicy): PersonalAccessTokenPolicy {
   return {
     enabled: policy.enabled,
+    mcpEnabled: policy.mcpEnabled,
     maxLifetimeDays: policy.maxLifetimeDays,
     allowedPermissions: policy.allowedPermissions,
   };
@@ -63,7 +66,7 @@ export class PersonalAccessTokenPolicyStore {
   async get(): Promise<PersonalAccessTokenPolicySnapshot> {
     const row = await this.db
       .prepare(
-        `SELECT enabled, max_lifetime_days, allowed_permissions_json, revision, updated_at,
+        `SELECT enabled, mcp_enabled, max_lifetime_days, allowed_permissions_json, revision, updated_at,
                 updated_by_user_id_snapshot
            FROM workspace_personal_access_token_policy WHERE id = 1`
       )
@@ -90,7 +93,9 @@ export class PersonalAccessTokenPolicyStore {
   }): Promise<ReplacePersonalAccessTokenPolicyResult> {
     const before = await this.get();
     if (before.revision !== input.expectedRevision) return { status: "conflict", policy: before };
-    const after = personalAccessTokenPolicySchema.parse(input.policy);
+    const parsed = personalAccessTokenPolicySchema.parse(input.policy);
+    // A write that omits the MCP switch keeps it, so the audit records the value actually stored.
+    const after = { ...parsed, mcpEnabled: parsed.mcpEnabled ?? before.mcpEnabled };
     const ceiling =
       after.allowedPermissions === null
         ? null
@@ -135,16 +140,17 @@ export class PersonalAccessTokenPolicyStore {
       this.db
         .prepare(
           `UPDATE workspace_personal_access_token_policy
-              SET enabled = ?, max_lifetime_days = ?, allowed_permissions_json = ?,
+              SET enabled = ?, mcp_enabled = ?, max_lifetime_days = ?, allowed_permissions_json = ?,
                   revision = revision + 1, updated_at = ?, updated_by_user_id_snapshot = ?
              WHERE id = 1 AND revision = ? AND EXISTS (
                SELECT 1 FROM authorization_audit_events WHERE id = ? AND operation_result = 'applied'
              )
-        RETURNING enabled, max_lifetime_days, allowed_permissions_json, revision, updated_at,
+        RETURNING enabled, mcp_enabled, max_lifetime_days, allowed_permissions_json, revision, updated_at,
                   updated_by_user_id_snapshot`
         )
         .bind(
           after.enabled ? 1 : 0,
+          after.mcpEnabled ? 1 : 0,
           after.maxLifetimeDays,
           ceiling,
           input.now,

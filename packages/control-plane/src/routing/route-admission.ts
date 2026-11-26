@@ -625,7 +625,7 @@ async function enforceRouteAuthorization(
  * Record that a token was presented, off the request's critical path. Here rather than in
  * `authenticate()`, whose narrow port has no background tasks.
  */
-function recordPersonalAccessTokenUse(ctx: RequestContext, tokenId: string): void {
+export function recordPersonalAccessTokenUse(ctx: RequestContext, tokenId: string): void {
   ctx.executionCtx.submit(
     () => new PersonalAccessTokenStore(ctx.db).touchLastUsed(tokenId, Date.now()),
     { name: "personal-access-token.touch-last-used", context: { token_id: tokenId } }

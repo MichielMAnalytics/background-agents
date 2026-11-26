@@ -145,7 +145,7 @@ ownership, bots, and member suspension.
 | [slack-bot](packages/slack-bot)             | Slack integration (sessions from messages)  |
 | [github-bot](packages/github-bot)           | GitHub integration (auto-review, @mention)  |
 | [linear-bot](packages/linear-bot)           | Linear integration (issue → coding session) |
-| [mcp-server](packages/mcp-server)           | Local MCP server (personal access token)    |
+| [mcp-server](packages/mcp-server)           | Local MCP server (deprecated; use `/mcp`)   |
 | [shared](packages/shared)                   | Shared types and utilities                  |
 
 ## Getting Started
@@ -244,8 +244,9 @@ Interact with agents from wherever your team already works:
   per-repo. See [GitHub integration](docs/integrations/GITHUB.md)
 - **Linear Bot** — Mention or assign the agent on an issue to start a coding session, post progress
   activities, and link the resulting PR. See [Linear integration](docs/integrations/LINEAR.md)
-- **MCP Server** — Let Claude Code or another MCP client read sessions and automation runs, and
-  optionally create and run automations or import skills, with a personal access token. See
+- **MCP Server** — The control plane serves MCP at `/mcp`, so Claude Code or another MCP client can
+  read sessions and automation runs, and optionally start and steer sessions, create and run
+  automations, or import skills, with a personal access token. See
   [MCP server](packages/mcp-server/README.md)
 - **Webhooks** — Trigger sessions from any external system via authenticated HTTP POST
 

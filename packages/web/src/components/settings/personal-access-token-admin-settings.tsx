@@ -8,7 +8,6 @@ import {
   PERSONAL_ACCESS_TOKEN_GRANTABLE_PERMISSIONS,
   personalAccessTokenEffectiveExpiry,
   type PersonalAccessTokenPolicy,
-  type PersonalAccessTokenPolicySnapshot,
   type WorkspacePersonalAccessToken,
 } from "@open-inspect/shared/types/personal-access-tokens";
 import {
@@ -17,6 +16,7 @@ import {
   saveWorkspacePersonalAccessTokenPolicy,
   useWorkspacePersonalAccessTokenPolicy,
   useWorkspacePersonalAccessTokens,
+  type WorkspaceApiPolicy,
 } from "@/hooks/use-workspace-personal-access-tokens";
 import { personalAccessTokenPermissionLabel } from "@/lib/personal-access-token-permissions";
 import { formatLastUsed, formatTokenExpiry } from "@/lib/personal-access-token-display";
@@ -36,6 +36,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PersonalAccessTokenPermissionPicker } from "./personal-access-token-permission-picker";
 import { useSettingsUnsavedChanges } from "./settings-navigation-guard";
+import { CONTROL_PLANE_WS_URL } from "@/lib/control-plane-ws-url";
+import { hostedMcpUrl } from "@/lib/hosted-mcp";
 
 /** Lifetime caps an administrator can choose besides none (the system maximum), longest first. */
 const LIFETIME_CAP_DAYS: readonly number[] = [180, 90, 30, 7];
@@ -65,10 +67,14 @@ function ownerLabel(owner: WorkspacePersonalAccessToken["owner"]): string {
   return owner.displayName ?? owner.email ?? owner.userId;
 }
 
-/** The rules of a policy snapshot, without its revision and authorship. */
-function rulesOf(policy: PersonalAccessTokenPolicy): PersonalAccessTokenPolicy {
+/**
+ * The rules of a policy snapshot, without its revision and authorship. The MCP switch is left out
+ * when the control plane did not send it, so saving never names a field it would refuse.
+ */
+function rulesOf(policy: WorkspaceApiPolicy): PersonalAccessTokenPolicy {
   return {
     enabled: policy.enabled,
+    ...(policy.mcpEnabled === undefined ? {} : { mcpEnabled: policy.mcpEnabled }),
     maxLifetimeDays: policy.maxLifetimeDays,
     allowedPermissions: policy.allowedPermissions,
   };
@@ -94,7 +100,7 @@ function PolicySection() {
   // revision, so a policy someone else saved meanwhile is refused rather than overwritten, and a
   // revalidation never replaces the edits. Null while the form shows the loaded policy.
   const [editing, setEditing] = useState<{
-    base: PersonalAccessTokenPolicySnapshot;
+    base: WorkspaceApiPolicy;
     draft: PersonalAccessTokenPolicy;
   } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -106,13 +112,14 @@ function PolicySection() {
 
   if (loading) return <div className="text-sm text-muted-foreground">Loading...</div>;
   if (error || !policy) {
-    return <div className="text-sm text-destructive">Failed to load the access token policy.</div>;
+    return <div className="text-sm text-destructive">Failed to load the API policy.</div>;
   }
 
   const loaded = policy;
   const shown = editing?.base ?? loaded;
   const draft = editing?.draft ?? rulesOf(loaded);
   const lifetimeCaps = lifetimeCapChoices(shown.maxLifetimeDays);
+  const mcpUrl = hostedMcpUrl(CONTROL_PLANE_WS_URL);
   const ceiling = new Set(draft.allowedPermissions?.filter(isPersonalAccessTokenGrantable) ?? []);
 
   function edit(next: PersonalAccessTokenPolicy) {
@@ -140,7 +147,7 @@ function PolicySection() {
       }
       await mutate(result.policy, { revalidate: false });
       setEditing(null);
-      toast.success("Access token policy saved");
+      toast.success("API policy saved");
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Failed to save the policy");
     } finally {
@@ -151,12 +158,13 @@ function PolicySection() {
   return (
     <section aria-labelledby="access-token-policy-heading">
       <h2 id="access-token-policy-heading" className="mb-1 text-xl font-semibold text-foreground">
-        Access token policy
+        API policy
       </h2>
       <p className="mb-6 text-sm text-muted-foreground">
-        Rules for every member&apos;s personal access tokens. Changes apply to existing tokens at
-        once: turning tokens off stops all of them, a shorter lifetime expires older tokens early,
-        and a narrower set of permissions narrows every token&apos;s grant.
+        Rules for API access with every member&apos;s personal access tokens, including over MCP.
+        Changes apply to existing tokens at once: turning tokens off stops all of them, a shorter
+        lifetime expires older tokens early, and a narrower set of permissions narrows every
+        token&apos;s grant.
       </p>
 
       {/* Inert while a save is in flight, so nothing edited then is lost when it completes. */}
@@ -176,6 +184,32 @@ function PolicySection() {
             onCheckedChange={(enabled) => edit({ ...draft, enabled })}
           />
         </div>
+
+        {draft.mcpEnabled !== undefined && (
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <label htmlFor="hosted-mcp-enabled" className="text-sm font-medium text-foreground">
+                Allow MCP clients
+              </label>
+              <p className="text-xs text-muted-foreground">
+                {mcpUrl ? (
+                  <>
+                    Members connect an MCP client to <code>{mcpUrl}</code> with an access
+                    token.{" "}
+                  </>
+                ) : (
+                  "Members connect an MCP client to the control plane's /mcp with an access token. "
+                )}
+                Off refuses MCP; tokens keep working with the API.
+              </p>
+            </div>
+            <Switch
+              id="hosted-mcp-enabled"
+              checked={draft.mcpEnabled}
+              onCheckedChange={(mcpEnabled) => edit({ ...draft, mcpEnabled })}
+            />
+          </div>
+        )}
 
         <fieldset>
           <legend className="text-sm font-medium text-foreground">Longest lifetime</legend>

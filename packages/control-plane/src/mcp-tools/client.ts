@@ -1,13 +1,16 @@
 /**
- * Control-plane client for the MCP server.
+ * Control-plane client for the MCP tools.
  *
  * Authenticates with a personal access token the user issued to themselves in the web UI. The
  * control plane resolves it to that user and narrows the user's permissions to the token's grant,
  * so what this client can do is decided there, not here: a route refuses the token unless it
  * accepts tokens, and a permission check fails unless the token was granted the permission.
  *
- * The token is a bearer credential on every request, so the base URL has to be `https:`, or a
- * loopback host where nothing leaves the machine, and redirects are refused rather than followed.
+ * Two servers use it. The local stdio server sends each request over the network, so the token
+ * is a bearer credential on the wire: the base URL has to be `https:`, or a loopback host where
+ * nothing leaves the machine, and redirects are refused rather than followed. The hosted `/mcp`
+ * route instead hands each request to the control plane's own router in-process, carrying the
+ * same token, so every route admits it exactly as it would a direct call.
  */
 
 import { isPersonalAccessTokenFormat } from "@open-inspect/shared/types/personal-access-tokens";
@@ -27,10 +30,19 @@ export class ControlPlaneError extends Error {
   }
 }
 
+/** Sends one request and resolves with its response, like `fetch` given a `Request`. */
+export type ControlPlaneFetch = (request: Request) => Promise<Response>;
+
 export interface ControlPlaneClientConfig {
   baseUrl: string;
   token: string;
   timeoutMs?: number;
+  /**
+   * Where requests go instead of the network. The hosted server passes the control plane's own
+   * router, so no request leaves the process and the base URL is only the origin requests are
+   * addressed to. Omitted, requests are sent with `fetch` and the base URL must be secure.
+   */
+  fetch?: ControlPlaneFetch;
 }
 
 interface RequestOptions {
@@ -75,6 +87,17 @@ function requireSecureBaseUrl(value: string): string {
   return `${url.origin}${url.pathname}`.replace(/\/+$/, "");
 }
 
+/** A base URL without a trailing slash, for requests that never leave the process. */
+function baseUrlOf(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new ControlPlaneError(`Control plane URL is not a valid URL: ${value}`, null);
+  }
+  return url.origin;
+}
+
 /** Refusal codes the control plane answers with, and what the user can do about each. */
 function refusalHint(status: number, body: string): string | null {
   if (status === 401) {
@@ -115,12 +138,15 @@ export class ControlPlaneClient {
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly timeoutMs: number;
+  private readonly transport: ControlPlaneFetch | undefined;
 
   constructor(
     config: ControlPlaneClientConfig,
     private readonly signal?: AbortSignal
   ) {
-    this.baseUrl = requireSecureBaseUrl(config.baseUrl);
+    this.transport = config.fetch;
+    // An in-process request never reaches the network, so only the network path needs https.
+    this.baseUrl = config.fetch ? baseUrlOf(config.baseUrl) : requireSecureBaseUrl(config.baseUrl);
     if (!isPersonalAccessTokenFormat(config.token)) {
       // The value itself is never echoed: it may be a real credential pasted into the wrong place.
       throw new ControlPlaneError(
@@ -135,7 +161,12 @@ export class ControlPlaneClient {
   /** Bind every HTTP step of one tool call without affecting concurrent calls. */
   withSignal(signal: AbortSignal): ControlPlaneClient {
     return new ControlPlaneClient(
-      { baseUrl: this.baseUrl, token: this.token, timeoutMs: this.timeoutMs },
+      {
+        baseUrl: this.baseUrl,
+        token: this.token,
+        timeoutMs: this.timeoutMs,
+        fetch: this.transport,
+      },
       signal
     );
   }
@@ -200,18 +231,37 @@ export class ControlPlaneClient {
     try {
       // A late response to an earlier step must not dispatch a cancelled write.
       this.signal?.throwIfAborted();
-      response = await fetch(url.toString(), {
+      const signal = this.signal
+        ? AbortSignal.any([this.signal, controller.signal])
+        : controller.signal;
+      const init: RequestInit = {
         method,
         headers,
         ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-        // A redirect would carry the bearer token to wherever the response points. The control
-        // plane never redirects an API call, so one means something in between is misbehaving.
-        redirect: "error",
-        signal: this.signal ? AbortSignal.any([this.signal, controller.signal]) : controller.signal,
-      });
-      // Inside the same timer as the fetch: `fetch` resolves on headers, so a control plane that
-      // sends headers and then stalls the body would hang the tool call if the timeout ended here.
-      body = await readCapped(response);
+        signal,
+      };
+      const exchange = async () => {
+        const answered = this.transport
+          ? // In-process: nothing is followed, and Workers refuses `redirect: "error"` on a Request.
+            await this.transport(new Request(url.toString(), init))
+          : await fetch(url.toString(), {
+              ...init,
+              // A redirect would carry the bearer token to wherever the response points. The
+              // control plane never redirects an API call, so one means something in between is
+              // misbehaving.
+              redirect: "error",
+            });
+        // Inside the same timer as the fetch: `fetch` resolves on headers, so a control plane that
+        // sends headers and then stalls the body would hang the tool call if the timeout ended
+        // here.
+        return { answered, text: await readCapped(answered, signal) };
+      };
+      // The network honours the signal itself. The in-process router does not, so the timeout and
+      // cancellation are enforced around it instead: the caller stops waiting, though a route that
+      // already started a write may still finish it.
+      ({ answered: response, text: body } = this.transport
+        ? await untilAborted(exchange(), signal)
+        : await exchange());
     } catch (cause) {
       this.signal?.throwIfAborted();
       // A cap breach already says exactly what happened; rewrapping it would hide that.
@@ -239,6 +289,18 @@ export class ControlPlaneClient {
   }
 }
 
+/** Settle with `work`, or reject with the signal's reason as soon as it aborts. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  // An abandoned exchange may still fail later; that failure has no one left to report to.
+  work.catch(() => {});
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
 /**
  * Read a response body, refusing to buffer more than `MAX_RESPONSE_BYTES`.
  *
@@ -247,11 +309,17 @@ export class ControlPlaneClient {
  * length. An oversized body is an error rather than a truncation, because truncated JSON only
  * resurfaces later as a parse failure that blames the wrong thing.
  */
-async function readCapped(response: Response): Promise<string> {
+async function readCapped(response: Response, signal: AbortSignal): Promise<string> {
   if (!response.body) return "";
 
   const decoder = new TextDecoder("utf-8");
   const reader = response.body.getReader();
+  // A timeout or cancellation cancels the stream, so an abandoned read does not keep it open. The
+  // cancelled read then ends as if the body were complete, so the signal is checked after the loop:
+  // a partial body must never pass for a whole one.
+  const cancel = () => void reader.cancel().catch(() => {});
+  if (signal.aborted) cancel();
+  else signal.addEventListener("abort", cancel, { once: true });
   let total = 0;
   let text = "";
   try {
@@ -267,7 +335,9 @@ async function readCapped(response: Response): Promise<string> {
       }
       text += decoder.decode(value, { stream: true });
     }
+    signal.throwIfAborted();
   } finally {
+    signal.removeEventListener("abort", cancel);
     // An abort or an over-cap throw leaves the stream open; cancelling lets the socket close.
     void reader.cancel().catch(() => {});
   }

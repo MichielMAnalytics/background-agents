@@ -29,7 +29,7 @@ events back through the same WebSocket chain.
 
 ```
 @open-inspect/shared  ←  control-plane, web, slack-bot, github-bot, linear-bot, mcp-server
-@open-inspect/control-plane  ←  preview
+@open-inspect/control-plane  ←  preview, mcp-server (the tools in src/mcp-tools)
 ```
 
 **Build `@open-inspect/shared` first** whenever you change shared types. Other packages import from
@@ -37,18 +37,18 @@ it at build time.
 
 ## Package Overview
 
-| Package         | Lang / Framework                   | Purpose                                                     |
-| --------------- | ---------------------------------- | ----------------------------------------------------------- |
-| `shared`        | TypeScript                         | Shared types, auth utilities, model definitions             |
-| `control-plane` | TypeScript / CF Workers + DO       | Session management, WebSocket streaming, GitHub integration |
-| `web`           | TypeScript / Next.js 16 + React 19 | User-facing dashboard, OAuth, real-time UI                  |
-| `docs`          | TypeScript / Next.js 16 + Fumadocs | Public user documentation at docs.backgroundagents.dev      |
-| `slack-bot`     | TypeScript / CF Workers + Hono     | Slack event handler, session creation                       |
-| `github-bot`    | TypeScript / CF Workers + Hono     | PR review and @mention webhook handler                      |
-| `linear-bot`    | TypeScript / CF Workers + Hono     | Linear agent webhook handler                                |
-| `mcp-server`    | TypeScript / Node + MCP SDK        | Local stdio MCP server over personal access tokens          |
-| `preview`       | TypeScript / Node + Playwright     | Authenticated local preview of web + control plane (dev)    |
-| `modal-infra`   | Python 3.12 / Modal + FastAPI      | Sandbox lifecycle, WebSocket bridge to control plane        |
+| Package         | Lang / Framework                   | Purpose                                                            |
+| --------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| `shared`        | TypeScript                         | Shared types, auth utilities, model definitions                    |
+| `control-plane` | TypeScript / CF Workers + DO       | Session management, WebSocket streaming, GitHub integration        |
+| `web`           | TypeScript / Next.js 16 + React 19 | User-facing dashboard, OAuth, real-time UI                         |
+| `docs`          | TypeScript / Next.js 16 + Fumadocs | Public user documentation at docs.backgroundagents.dev             |
+| `slack-bot`     | TypeScript / CF Workers + Hono     | Slack event handler, session creation                              |
+| `github-bot`    | TypeScript / CF Workers + Hono     | PR review and @mention webhook handler                             |
+| `linear-bot`    | TypeScript / CF Workers + Hono     | Linear agent webhook handler                                       |
+| `mcp-server`    | TypeScript / Node + MCP SDK        | Deprecated local stdio MCP server; the control plane serves `/mcp` |
+| `preview`       | TypeScript / Node + Playwright     | Authenticated local preview of web + control plane (dev)           |
+| `modal-infra`   | Python 3.12 / Modal + FastAPI      | Sandbox lifecycle, WebSocket bridge to control plane               |
 
 ## Common Commands
 

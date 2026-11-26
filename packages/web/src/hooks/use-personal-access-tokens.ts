@@ -41,7 +41,7 @@ export function usePersonalAccessTokens() {
 async function fetchPolicy(): Promise<PersonalAccessTokenPolicy> {
   const response = await browserApiFetch(PERSONAL_ACCESS_TOKEN_POLICY_KEY);
   if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to load the access token policy"));
+    throw new Error(await errorMessage(response, "Failed to load the API policy"));
   }
   return personalAccessTokenPolicySchema.parse(await response.json());
 }

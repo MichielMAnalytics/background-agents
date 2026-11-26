@@ -1,9 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ControlPlaneClient } from "./client";
+import { ControlPlaneClient } from "@open-inspect/control-plane/src/mcp-tools/client";
 import { createServer } from "./index";
-import { TOOLS } from "./tools";
+import { TOOLS } from "@open-inspect/control-plane/src/mcp-tools/tools";
 
 const TOKEN = `oi_pat_${"a".repeat(64)}`;
 const BASE_URL = "https://control-plane.example.com";

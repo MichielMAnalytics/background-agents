@@ -525,12 +525,13 @@ workspace-owned; use a team-owned GitHub Event automation instead. See
 
 ## Personal Access Tokens
 
-A member can issue personal access tokens under **Settings > Access tokens** so a local tool, such
-as the [MCP server](../packages/mcp-server/README.md), can call the control plane as them. A token
-(`oi_pat_…`, sent as `Authorization: Bearer`) acts as its owner within the RBAC permissions granted
-when it was issued. On every request its permissions are the overlap of the owner's current
-permissions, the token's grant, and the workspace policy, so a token loses a permission as soon as
-its owner does, and a suspended owner's tokens are refused.
+A member can issue personal access tokens under **Settings > Access tokens** so a tool, such as an
+MCP client connected to the control plane's `/mcp` (see the
+[control plane README](../packages/control-plane/README.md#hosted-mcp-server)), can call the control
+plane as them. A token (`oi_pat_…`, sent as `Authorization: Bearer`) acts as its owner within the
+RBAC permissions granted when it was issued. On every request its permissions are the overlap of the
+owner's current permissions, the token's grant, and the workspace policy, so a token loses a
+permission as soon as its owner does, and a suspended owner's tokens are refused.
 
 - Only routes that explicitly accept tokens admit one; other user routes answer
   `403 personal_access_token_not_accepted`. Today they cover what the MCP server's tools need:

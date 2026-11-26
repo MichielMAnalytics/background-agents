@@ -66,6 +66,7 @@ beforeAll(() => {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const OPEN_POLICY: PersonalAccessTokenPolicySnapshot = {
   enabled: true,
+  mcpEnabled: true,
   maxLifetimeDays: null,
   allowedPermissions: null,
   revision: 3,
@@ -145,13 +146,54 @@ describe("PersonalAccessTokenAdminSettings", () => {
     await user.click(save);
 
     expect(hooks.save).toHaveBeenCalledWith(
-      { enabled: false, maxLifetimeDays: 30, allowedPermissions: ["sessions.read"] },
+      {
+        enabled: false,
+        maxLifetimeDays: 30,
+        allowedPermissions: ["sessions.read"],
+        mcpEnabled: true,
+      },
       3
     );
     await waitFor(() =>
       expect(hooks.mutatePolicy).toHaveBeenCalledWith(saved, { revalidate: false })
     );
-    expect(toast.success).toHaveBeenCalledWith("Access token policy saved");
+    expect(toast.success).toHaveBeenCalledWith("API policy saved");
+  });
+
+  it("turns MCP off on its own, leaving tokens working with the API", async () => {
+    hooks.save.mockResolvedValue({
+      status: "saved",
+      policy: { ...OPEN_POLICY, mcpEnabled: false, revision: 4 },
+    });
+    const user = userEvent.setup();
+    render(<PersonalAccessTokenAdminSettings />);
+
+    expect(screen.getByText(/\/mcp$/)).toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: "Allow MCP clients" }));
+    await user.click(screen.getByRole("button", { name: "Save policy" }));
+
+    expect(hooks.save).toHaveBeenCalledWith(
+      { enabled: true, mcpEnabled: false, maxLifetimeDays: null, allowedPermissions: null },
+      3
+    );
+  });
+
+  it("hides the MCP switch for a control plane that predates it, and saves without it", async () => {
+    // Deploys can briefly pair this app with an older control plane, which refuses the field.
+    const { mcpEnabled: _omitted, ...older } = OPEN_POLICY;
+    hooks.policy = older as typeof OPEN_POLICY;
+    hooks.save.mockResolvedValue({ status: "saved", policy: { ...older, revision: 4 } });
+    const user = userEvent.setup();
+    render(<PersonalAccessTokenAdminSettings />);
+
+    expect(screen.queryByRole("switch", { name: "Allow MCP clients" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: /30 days/ }));
+    await user.click(screen.getByRole("button", { name: "Save policy" }));
+
+    expect(hooks.save).toHaveBeenCalledWith(
+      { enabled: true, maxLifetimeDays: 30, allowedPermissions: null },
+      3
+    );
   });
 
   it("refuses an empty permission ceiling unless tokens are turned off", async () => {
@@ -171,13 +213,13 @@ describe("PersonalAccessTokenAdminSettings", () => {
     await user.click(screen.getByRole("button", { name: "Save policy" }));
 
     expect(hooks.save).toHaveBeenCalledWith(
-      { enabled: false, maxLifetimeDays: null, allowedPermissions: [] },
+      { enabled: false, maxLifetimeDays: null, allowedPermissions: [], mcpEnabled: true },
       3
     );
     await waitFor(() =>
       expect(hooks.mutatePolicy).toHaveBeenCalledWith(saved, { revalidate: false })
     );
-    expect(toast.success).toHaveBeenCalledWith("Access token policy saved");
+    expect(toast.success).toHaveBeenCalledWith("API policy saved");
     expect(toast.error).not.toHaveBeenCalled();
   });
 
@@ -194,13 +236,13 @@ describe("PersonalAccessTokenAdminSettings", () => {
     await user.click(screen.getByRole("button", { name: "Save policy" }));
 
     expect(hooks.save).toHaveBeenCalledWith(
-      { enabled: false, maxLifetimeDays: 30, allowedPermissions: [] },
+      { enabled: false, maxLifetimeDays: 30, allowedPermissions: [], mcpEnabled: true },
       3
     );
     await waitFor(() =>
       expect(hooks.mutatePolicy).toHaveBeenCalledWith(saved, { revalidate: false })
     );
-    expect(toast.success).toHaveBeenCalledWith("Access token policy saved");
+    expect(toast.success).toHaveBeenCalledWith("API policy saved");
     expect(toast.error).not.toHaveBeenCalled();
   });
 
@@ -273,7 +315,7 @@ describe("PersonalAccessTokenAdminSettings", () => {
     await user.click(screen.getByRole("button", { name: "Save policy" }));
 
     expect(hooks.save).toHaveBeenCalledWith(
-      { enabled: true, maxLifetimeDays: 90, allowedPermissions: null },
+      { enabled: true, maxLifetimeDays: 90, allowedPermissions: null, mcpEnabled: true },
       3
     );
   });

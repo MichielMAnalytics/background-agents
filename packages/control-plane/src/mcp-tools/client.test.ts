@@ -314,3 +314,72 @@ describe("ControlPlaneClient", () => {
     );
   });
 });
+
+describe("ControlPlaneClient over an in-process transport", () => {
+  const never = () => new Promise<Response>(() => {});
+
+  it("sends the token to the transport, never to the network, from any origin", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const seen: Request[] = [];
+    const client = new ControlPlaneClient({
+      // An in-process request never leaves the process, so the origin need not be https.
+      baseUrl: "http://control-plane.internal",
+      token: TOKEN,
+      fetch: async (request) => {
+        seen.push(request);
+        return Response.json({ sessions: [] });
+      },
+    });
+
+    await expect(client.get("/sessions", { limit: 5 })).resolves.toEqual({ sessions: [] });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(seen[0]?.url).toBe("http://control-plane.internal/sessions?limit=5");
+    expect(seen[0]?.headers.get("Authorization")).toBe(`Bearer ${TOKEN}`);
+    vi.unstubAllGlobals();
+  });
+
+  it("times out a request the router never answers, which ignores the signal", async () => {
+    const client = new ControlPlaneClient({
+      baseUrl: BASE_URL,
+      token: TOKEN,
+      timeoutMs: 20,
+      fetch: never,
+    });
+
+    await expect(client.get("/sessions")).rejects.toThrow(/timed out after 20ms/);
+  });
+
+  it("stops waiting as soon as the call is cancelled", async () => {
+    const controller = new AbortController();
+    const client = new ControlPlaneClient({
+      baseUrl: BASE_URL,
+      token: TOKEN,
+      fetch: never,
+    }).withSignal(controller.signal);
+
+    const pending = client.get("/sessions");
+    controller.abort(new Error("cancelled"));
+    await expect(pending).rejects.toThrow("cancelled");
+  });
+
+  it("times out a response whose body stalls after its headers, and closes its stream", async () => {
+    const cancelled = vi.fn();
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"partial":'));
+      },
+      cancel: cancelled,
+    });
+    const client = new ControlPlaneClient({
+      baseUrl: BASE_URL,
+      token: TOKEN,
+      timeoutMs: 20,
+      fetch: async () => new Response(stalled),
+    });
+
+    // The partial body is never returned as a result.
+    await expect(client.get("/sessions")).rejects.toThrow(/timed out after 20ms/);
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalled());
+  });
+});

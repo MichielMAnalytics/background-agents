@@ -1,11 +1,11 @@
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
+import { z } from "zod";
 import {
   listWorkspacePersonalAccessTokensResponseSchema,
   personalAccessTokenPolicySnapshotSchema,
   type ListWorkspacePersonalAccessTokensResponse,
   type PersonalAccessTokenPolicy,
-  type PersonalAccessTokenPolicySnapshot,
 } from "@open-inspect/shared/types/personal-access-tokens";
 import { useAuthSession } from "@/lib/auth-session";
 import { browserApiFetch } from "@/lib/browser-api-fetch";
@@ -18,12 +18,23 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
   return typeof body.error === "string" ? body.error : fallback;
 }
 
-async function fetchPolicy(): Promise<PersonalAccessTokenPolicySnapshot> {
+/**
+ * The API policy as this app reads it. Parsed leniently, so the panel keeps working while the
+ * control plane and this app run different versions during a deploy: unknown fields are dropped,
+ * and the MCP switch is absent from a control plane that predates it.
+ */
+const workspaceApiPolicySchema = z.object({
+  ...personalAccessTokenPolicySnapshotSchema.shape,
+  mcpEnabled: z.boolean().optional(),
+});
+export type WorkspaceApiPolicy = z.infer<typeof workspaceApiPolicySchema>;
+
+async function fetchPolicy(): Promise<WorkspaceApiPolicy> {
   const response = await browserApiFetch(POLICY_KEY);
   if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to load the access token policy"));
+    throw new Error(await errorMessage(response, "Failed to load the API policy"));
   }
-  return personalAccessTokenPolicySnapshotSchema.parse(await response.json());
+  return workspaceApiPolicySchema.parse(await response.json());
 }
 
 async function fetchTokens(
@@ -76,7 +87,7 @@ export function useWorkspacePersonalAccessTokens() {
 }
 
 export type SavePersonalAccessTokenPolicyResult =
-  | { status: "saved"; policy: PersonalAccessTokenPolicySnapshot }
+  | { status: "saved"; policy: WorkspaceApiPolicy }
   /** Someone else changed the policy since `revision`; reload it rather than overwrite theirs. */
   | { status: "conflict" };
 
@@ -94,7 +105,7 @@ export async function saveWorkspacePersonalAccessTokenPolicy(
   if (!response.ok) throw new Error(await errorMessage(response, "Failed to save the policy"));
   return {
     status: "saved",
-    policy: personalAccessTokenPolicySnapshotSchema.parse(await response.json()),
+    policy: workspaceApiPolicySchema.parse(await response.json()),
   };
 }
 

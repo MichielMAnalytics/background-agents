@@ -1,5 +1,17 @@
 # @open-inspect/mcp-server
 
+> **Deprecated.** The control plane now serves the same tools at `https://<control-plane>/mcp`,
+> which a client reaches with nothing to build or install:
+>
+> ```bash
+> claude mcp add --transport http open-inspect https://<your-control-plane>/mcp \
+>   --header "Authorization: Bearer oi_pat_..."
+> ```
+>
+> This package will be removed once the hosted server covers everything it does. The tools and the
+> control-plane client live in `packages/control-plane/src/mcp-tools/`; this package only registers
+> them over stdio.
+
 MCP server over the Open-Inspect control plane. It runs locally over stdio, so an MCP client such as
 Claude Code or an IDE can inspect sessions, start and steer them, read automation runs, create and
 run automations, and manage skills without the web UI.
@@ -18,7 +30,7 @@ presents tools:
   personal access tokens. Every other route refuses one, whatever it was granted. A token cannot
   create, list, or revoke tokens, so a leaked one cannot issue itself a successor.
 - **You can revoke it immediately** under Settings › Access tokens. No deploy is involved.
-- **Your workspace's token policy also applies.** An administrator can turn tokens off, cap their
+- **Your workspace's API policy also applies.** An administrator can turn tokens off, cap their
   lifetime, limit the permissions they may hold, or revoke any member's token, and each change
   applies to existing tokens at once.
 

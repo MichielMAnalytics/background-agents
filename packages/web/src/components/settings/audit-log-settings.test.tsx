@@ -230,7 +230,7 @@ describe("AuditLogSettings", () => {
     ["automation.executor_changed", "Automation executor changed"],
     ["personal_access_token.created", "Personal access token created"],
     ["personal_access_token.revoked", "Personal access token revoked"],
-    ["workspace.personal_access_token_policy_updated", "Access token policy updated"],
+    ["workspace.personal_access_token_policy_updated", "API policy updated"],
   ])("labels %s as an operation in the workspace audit viewer", (action, label) => {
     const article = renderSingle(createEvent("applied", { action }));
     expect(article.getByText(label)).toBeInTheDocument();

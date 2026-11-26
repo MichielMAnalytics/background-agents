@@ -17,6 +17,12 @@ export type ControlPlaneHonoEnv = {
     admission?: RouteAdmission;
     /** Set by the app-owned responders that answer without a route policy. */
     admissionExempt?: true;
+    /**
+     * Serves a request through this same app, in-process, as if it had arrived from outside:
+     * a fresh request context, authentication, admission, audit, and response policy. The hosted
+     * MCP route uses it so each tool call is admitted by the route it calls.
+     */
+    inProcessFetch: (request: Request) => Promise<Response>;
   };
 };
 

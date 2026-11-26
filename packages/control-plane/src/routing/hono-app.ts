@@ -133,9 +133,14 @@ export function createControlPlaneApp(
       });
     }
 
-    const context = contextFor(c.req.raw, c.env, host.backgroundTasks(executionContextOf(c)));
+    const executionCtx = executionContextOf(c);
+    const context = contextFor(c.req.raw, c.env, host.backgroundTasks(executionCtx));
     c.set("requestContext", context);
     c.set("startedAt", startedAt);
+    const env = c.env;
+    // The same execution context the platform handed this request, passed on unchanged.
+    const platformCtx = executionCtx as Parameters<typeof app.fetch>[2];
+    c.set("inProcessFetch", (request) => Promise.resolve(app.fetch(request, env, platformCtx)));
 
     // Hono maps HEAD to GET implicitly; the control plane never has.
     if (method === "HEAD") return withCorsAndTraceHeaders(error("Not found", 404), context);

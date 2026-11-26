@@ -593,8 +593,9 @@ Personal access tokens:
   cleartext `display_prefix`, `expires_at` (required), and minute-resolution `last_used_at`.
   Deleting the owner deletes their tokens.
 - `personal_access_token_permissions`: a token's grant, one row per RBAC permission.
-- `workspace_personal_access_token_policy`: the single policy row (`enabled`, `max_lifetime_days`,
-  `allowed_permissions_json`, `revision`); a `NULL` limit means the system's own.
+- `workspace_personal_access_token_policy`: the single API policy row (`enabled`, `mcp_enabled`,
+  `max_lifetime_days`, `allowed_permissions_json`, `revision`); a `NULL` limit means the system's
+  own.
 
 ## Browser Authentication
 
@@ -795,6 +796,19 @@ pins this list, so adding to it is a visible change:
 - creating an automation (`POST /automations`) and triggering one (`POST /automations/:id/trigger`)
 - skill import and re-import, with their previews
 - reading one file of a session diff: `GET /sessions/:id/diff/:revisionId/files/:fileId`
+
+#### Hosted MCP server
+
+`/mcp` serves the MCP tools (`src/mcp-tools/`) over Streamable HTTP, statelessly: each request gets
+a fresh MCP server, nothing is kept between requests, and `GET` and `DELETE` answer `405`. One
+request is one message: JSON-RPC batches and `subscriptions/listen` are refused. The route is
+handler-authenticated and grants nothing itself. It answers `404` while the API policy's
+`mcp_enabled` is off, refuses a browser `Origin` whose hostname is not that of `WEB_APP_URL` or
+`WORKER_URL`, and requires a live personal access token (a `401` with a `Bearer` challenge
+otherwise, and also when a service signature is present). Each tool call is then a request to this
+same app, made in-process with the same bearer token, so the route it reaches admits, narrows, and
+audits it exactly as a direct API call. Tool arguments are never logged. The local stdio server in
+`packages/mcp-server` registers the same tools and is deprecated.
 
 Five rules reach past route admission:
 

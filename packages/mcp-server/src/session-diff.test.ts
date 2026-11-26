@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { PERSONAL_ACCESS_TOKEN_PREFIX } from "@open-inspect/shared/types/personal-access-tokens";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ControlPlaneClient } from "./client";
+import { ControlPlaneClient } from "@open-inspect/control-plane/src/mcp-tools/client";
 import { createServer } from "./index";
 
 const TOKEN = `${PERSONAL_ACCESS_TOKEN_PREFIX}${"a".repeat(64)}`;

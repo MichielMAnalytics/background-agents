@@ -6,7 +6,10 @@ import type { ReactNode } from "react";
 import { SWRConfig } from "swr";
 import type { WorkspacePersonalAccessToken } from "@open-inspect/shared/types/personal-access-tokens";
 import { browserApiFetch } from "@/lib/browser-api-fetch";
-import { useWorkspacePersonalAccessTokens } from "./use-workspace-personal-access-tokens";
+import {
+  saveWorkspacePersonalAccessTokenPolicy,
+  useWorkspacePersonalAccessTokens,
+} from "./use-workspace-personal-access-tokens";
 
 let currentUserId = "aaaa1111aaaa1111aaaa1111aaaa1111";
 
@@ -69,5 +72,33 @@ describe("useWorkspacePersonalAccessTokens", () => {
     answerFirstUser(Response.json({ tokens: [TOKEN], nextCursor: null }));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(result.current.tokens).toEqual([]);
+  });
+});
+
+describe("saveWorkspacePersonalAccessTokenPolicy", () => {
+  const SNAPSHOT = {
+    enabled: true,
+    maxLifetimeDays: null,
+    allowedPermissions: null,
+    revision: 4,
+    updatedAt: 1,
+    updatedByUserId: null,
+  };
+
+  beforeEach(() => vi.mocked(browserApiFetch).mockReset());
+
+  it("reads the policy from a control plane on either side of this app's version", async () => {
+    // Older: no MCP switch yet. Newer: a field this app does not know.
+    for (const body of [SNAPSHOT, { ...SNAPSHOT, mcpEnabled: false, futureSetting: 1 }]) {
+      vi.mocked(browserApiFetch).mockResolvedValueOnce(Response.json(body));
+      const result = await saveWorkspacePersonalAccessTokenPolicy(
+        { enabled: true, maxLifetimeDays: null, allowedPermissions: null },
+        3
+      );
+      expect(result).toEqual({
+        status: "saved",
+        policy: { ...SNAPSHOT, ...("mcpEnabled" in body ? { mcpEnabled: false } : {}) },
+      });
+    }
   });
 });

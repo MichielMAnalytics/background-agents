@@ -129,10 +129,42 @@ describe("the workspace token policy", () => {
     expect(audits.results).toHaveLength(1);
     expect(audits.results[0]?.actor_user_id_snapshot).toBe(ADMIN.userId);
     expect(JSON.parse(audits.results[0]!.metadata_json)).toEqual({
-      before: OPEN,
+      before: { ...OPEN, mcpEnabled: true },
       requested: { expectedRevision: 0 },
-      after: { ...OPEN, maxLifetimeDays: 30, allowedPermissions: ["sessions.read"] },
+      after: {
+        ...OPEN,
+        mcpEnabled: true,
+        maxLifetimeDays: 30,
+        allowedPermissions: ["sessions.read"],
+      },
     });
+  });
+
+  it("turns the hosted MCP server off and on, and keeps it when a write omits it", async () => {
+    expect(await policy()).toMatchObject({ mcpEnabled: true, revision: 0 });
+
+    expect((await setPolicy({ mcpEnabled: false })).status).toBe(200);
+    expect(await policy()).toMatchObject({ enabled: true, mcpEnabled: false, revision: 1 });
+
+    // A client that predates the switch saves the rest of the policy without it.
+    expect((await setPolicy({ maxLifetimeDays: 30 })).status).toBe(200);
+    expect(await policy()).toMatchObject({ mcpEnabled: false, maxLifetimeDays: 30, revision: 2 });
+
+    expect((await setPolicy({ mcpEnabled: true })).status).toBe(200);
+    expect(await policy()).toMatchObject({ mcpEnabled: true, revision: 3 });
+
+    const audits = await env.DB.prepare(
+      `SELECT metadata_json FROM authorization_audit_events
+        WHERE action = 'workspace.personal_access_token_policy_updated' ORDER BY occurred_at, rowid`
+    ).all<{ metadata_json: string }>();
+    // The audit records the value stored, including the one a write left unchanged.
+    expect(
+      audits.results.map((row) => (JSON.parse(row.metadata_json) as { after: unknown }).after)
+    ).toEqual([
+      { ...OPEN, mcpEnabled: false },
+      { ...OPEN, mcpEnabled: false, maxLifetimeDays: 30 },
+      { ...OPEN, mcpEnabled: true },
+    ]);
   });
 
   it("refuses a ceiling that allows a permission without its prerequisite", async () => {
@@ -291,6 +323,7 @@ describe("the workspace token policy", () => {
       .mockImplementationOnce(get)
       .mockResolvedValue({
         ...OPEN,
+        mcpEnabled: true,
         maxLifetimeDays: 7,
         revision: 9,
         updatedAt: 0,
@@ -309,6 +342,7 @@ describe("the workspace token policy", () => {
       status: "applied",
       policy: {
         ...OPEN,
+        mcpEnabled: true,
         maxLifetimeDays: 30,
         revision: 1,
         updatedAt: 1234,

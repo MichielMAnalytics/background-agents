@@ -1,10 +1,10 @@
 ---
 title: Govern access tokens
-description: Turn personal access tokens off, cap their lifetime, limit the permissions they may hold, and revoke any member's tokens.
+description: Turn personal access tokens or MCP off, cap token lifetime, limit the permissions tokens may hold, and revoke any member's tokens.
 audience: admin
 owner: security
 status: published
-lastReviewed: "2026-10-30"
+lastReviewed: "2026-11-25"
 relatedCode:
   - packages/control-plane/src/routes/personal-access-token-admin.ts
   - packages/control-plane/src/db/personal-access-token-policy.ts
@@ -12,9 +12,10 @@ relatedCode:
   - packages/shared/src/types/personal-access-tokens.ts
   - packages/web/src/components/settings/personal-access-token-admin-settings.tsx
   - terraform/d1/migrations/0097_personal_access_token_policy.sql
+  - terraform/d1/migrations/0107_api_policy_mcp_enabled.sql
 ---
 
-Members issue [personal access tokens](/integrations/personal-access-tokens) to let tools such as the [MCP server](/integrations/mcp-server) call OpenInspect as them. **Settings › Access token policy** lets you set the rules every token follows, and revoke any member's tokens.
+Members issue [personal access tokens](/integrations/personal-access-tokens) to let tools such as the [MCP server](/integrations/mcp-server) call OpenInspect as them. **Settings › API policy** lets you set the rules every token follows, turn the hosted MCP server off, and revoke any member's tokens.
 
 You need the **Manage personal access tokens** permission (`workspace.personal_access_tokens.manage`). Owners and Administrators have it; you can add it to a custom role, for example a security reviewer's, without granting member management.
 
@@ -25,6 +26,7 @@ The policy applies to existing tokens the moment you save it, not only to new on
 | Setting                          | Effect                                                                                                                                                                                                                                      |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Allow personal access tokens** | Off refuses every token at once and stops members creating new ones. Tokens are not revoked: turning it back on restores them.                                                                                                              |
+| **Allow MCP clients**            | Off answers the MCP server at `/mcp` as though it did not exist. Tokens keep working with the API directly. The setting shows the server's URL to give members.                                                                             |
 | **Longest lifetime**             | Tokens older than this stop working, even if they were issued for longer. New tokens cannot be issued for longer.                                                                                                                           |
 | **Permissions tokens may hold**  | Narrows every token's grant to these permissions, and new tokens cannot be granted others. Workspace administration permissions are never available. Allowing **Manage skills** also allows **Read skills**, which a token needs to use it. |
 

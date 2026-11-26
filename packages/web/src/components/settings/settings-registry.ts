@@ -201,8 +201,8 @@ export const SETTINGS_GROUPS = [
       },
       {
         id: "workspace-access-tokens",
-        label: "Access token policy",
-        description: "Govern members' personal access tokens",
+        label: "API policy",
+        description: "Govern personal access tokens and MCP access",
         keywords: "personal access token api mcp pat revoke kill switch lifetime",
         icon: KeyIcon,
         visibility: anyOf("workspace.personal_access_tokens.manage"),

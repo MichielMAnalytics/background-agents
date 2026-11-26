@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@open-inspect/control-plane": "file:../control-plane",
     "@open-inspect/shared": "file:../shared",
     "zod": "^4.6.7"
   },
